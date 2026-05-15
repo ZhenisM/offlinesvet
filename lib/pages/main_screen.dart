@@ -10,7 +10,7 @@ class MainScreen extends StatelessWidget {
     return Scaffold(
         appBar: AppBar(
           //backgroundColor: Colors.deepOrangeAccent,
-          title: Text('Proff Channel',
+          title: Text('Offline-svet',
             //style: TextStyle(color: Colors.white),
           ),
           centerTitle: true,

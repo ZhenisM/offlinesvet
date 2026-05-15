@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 
-class CategoryScreen extends StatelessWidget {
+class CategoryScreen extends StatefulWidget {
   final Section section;
-  final List<Product> allProducts;
+  final List<Product> allProducts; // оставляем для совместимости, не используем
   final List<Section> allSections;
 
   const CategoryScreen({
@@ -15,101 +16,196 @@ class CategoryScreen extends StatelessWidget {
     required this.allSections,
   });
 
-  void _menuOpen(BuildContext context) {
+  @override
+  State<CategoryScreen> createState() => _CategoryScreenState();
+}
+
+class _CategoryScreenState extends State<CategoryScreen> {
+  final _repository = ProductsRepository(dio: Dio());
+  final _scrollController = ScrollController();
+
+  final List<Product> _products = [];
+  bool _loading = false;
+  bool _hasMore = true;
+  String? _error;
+  int _page = 1;
+  static const int _limit = 50;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // Подгружаем следующую страницу когда доскроллили до конца
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 300) {
+      _loadProducts();
+    }
+  }
+
+  Future<void> _loadProducts() async {
+    if (_loading || !_hasMore) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final result = await _repository.getProducts(
+        sectionId: int.parse(widget.section.id),
+        page: _page,
+        limit: _limit,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _products.addAll(result.products);
+        _hasMore = result.hasMore;
+        _page++;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  void _menuOpen() {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MenuScreen(
-          sections: allSections,
-          products: allProducts,
+          sections: widget.allSections,
+          products: const [],
         ),
       ),
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
-    final products = _filterProducts(section);
-
     return Scaffold(
       appBar: AppBar(
-        title: Text(section.name),
+        title: Text(widget.section.name),
         centerTitle: true,
         actions: [
           IconButton(
             icon: const Icon(Icons.menu_outlined),
-            onPressed: () => _menuOpen(context),
+            onPressed: _menuOpen,
           ),
         ],
       ),
-      body: ListView(
+      body: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16),
-        children: [
-          /// 🔹 Подкатегории
-          if (section.children.isNotEmpty) ...[
-            Text(
-              'Подкатегории',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-
-            ...section.children.map((child) {
-              return ListTile(
-                title: Text(child.name),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CategoryScreen(
-                        section: child,
-                        allProducts: allProducts,
-                        allSections: allSections,
-                      ),
-                    ),
-                  );
-                },
-              );
-            }),
-
-            const SizedBox(height: 16),
-          ],
-
-          /// 🔹 Товары
-          Text(
-            'Товары',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-
-          ...products.map((p) => ProductTile(product: p)),
-        ],
+        itemCount: _itemCount,
+        itemBuilder: (context, i) => _buildItem(context, i),
       ),
     );
   }
 
-  /// 🔥 Фильтрация товаров по категории
-  List<Product> _filterProducts(Section section) {
-    // ВАЖНО: тут зависит от структуры твоего Product
-    // предположим есть product.sectionId
-
-    final ids = _collectIds(section);
-
-    return allProducts.where((p) => ids.contains(p.sectionId)).toList();
+  // Считаем сколько элементов в списке:
+  // подкатегории + заголовки + товары + индикатор/ошибка внизу
+  int get _itemCount {
+    int count = 0;
+    if (widget.section.children.isNotEmpty) count += widget.section.children.length + 1; // заголовок + дети
+    count += 1; // заголовок "Товары"
+    count += _products.length;
+    if (_loading || _error != null || !_hasMore && _products.isNotEmpty) count += 1; // футер
+    return count;
   }
 
-  /// собираем все вложенные id
-  List<String> _collectIds(Section section) {
-    final result = <String>[];
+  Widget _buildItem(BuildContext context, int i) {
+    int offset = 0;
 
-    void traverse(Section s) {
-      result.add(s.id);
-      for (final c in s.children) {
-        traverse(c);
+    // Подкатегории
+    if (widget.section.children.isNotEmpty) {
+      if (i == 0) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text('Подкатегории', style: Theme.of(context).textTheme.titleLarge),
+        );
       }
+      if (i <= widget.section.children.length) {
+        final child = widget.section.children[i - 1];
+        return ListTile(
+          title: Text(child.name),
+          trailing: const Icon(Icons.arrow_forward_ios),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CategoryScreen(
+                  section: child,
+                  allProducts: const [],
+                  allSections: widget.allSections,
+                ),
+              ),
+            );
+          },
+        );
+      }
+      offset = widget.section.children.length + 1;
     }
 
-    traverse(section);
-    return result;
+    // Заголовок "Товары"
+    if (i == offset) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 8),
+        child: Text('Товары (${_products.length}${_hasMore ? '+' : ''})',
+            style: Theme.of(context).textTheme.titleLarge),
+      );
+    }
+    offset += 1;
+
+    // Товары
+    final productIndex = i - offset;
+    if (productIndex < _products.length) {
+      return ProductTile(product: _products[productIndex]);
+    }
+
+    // Футер: загрузка / ошибка / конец списка
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          children: [
+            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+            TextButton(
+              onPressed: _loadProducts,
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (!_hasMore && _products.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Text('Все товары загружены: ${_products.length}',
+              style: const TextStyle(color: Colors.grey, fontSize: 13)),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

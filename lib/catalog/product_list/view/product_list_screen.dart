@@ -4,9 +4,6 @@ import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/catalog/category/view/category_screen.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 
-
-
-
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
 
@@ -15,34 +12,38 @@ class ProductListScreen extends StatefulWidget {
 }
 
 class _ProductListScreenState extends State<ProductListScreen> {
-
-  List<Product>? _productsList;
   List<Section>? _sectionsList;
+  String? _error;
+
   final _productsRepository = ProductsRepository(dio: Dio());
 
   @override
   void initState() {
     super.initState();
-    _loadProducts();
+    _loadSections();
   }
 
-  Future<void> _loadProducts() async {
-    final (products, sections) = await _productsRepository.getProductsList();
-
-    _productsList = products;
-    _sectionsList = sections;
-
-    setState(() {});
+  Future<void> _loadSections() async {
+    try {
+      final sections = await _productsRepository.getSections();
+      if (!mounted) return;
+      setState(() {
+        _sectionsList = sections;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+    }
   }
 
   void _menuOpen() {
-    if (_sectionsList == null || _productsList == null) return;
-
+    if (_sectionsList == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MenuScreen(
           sections: _sectionsList!,
-          products: _productsList!,
+          products: const [], // меню без товаров — только разделы
         ),
       ),
     );
@@ -61,45 +62,58 @@ class _ProductListScreenState extends State<ProductListScreen> {
           ),
         ],
       ),
-      body: (_productsList == null || _sectionsList == null)
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Блок категорий
-          Text(
-            'Категории',
-            style: Theme.of(context).textTheme.titleLarge,
+      body: switch ((_sectionsList, _error)) {
+        (null, null) => const Center(child: CircularProgressIndicator()),
+        (_, String err) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red, size: 40),
+              const SizedBox(height: 8),
+              Text(err, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _loadSections,
+                child: const Text('Повторить'),
+              ),
+            ],
           ),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _sectionsList!.length,
-            separatorBuilder: (_, __) => const Divider(),
-            itemBuilder: (context, i) {
-              final section = _sectionsList![i];
-
-              return ListTile(
-                title: Text(section.name),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CategoryScreen(
-                        section: section,
-                        allProducts: _productsList!,
-                        allSections: _sectionsList!,
-                      ),
-                    ),
-                  );
-                },
+        ),
+        (List<Section> sections, _) => ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: sections.length + 1,
+          separatorBuilder: (_, __) => const Divider(),
+          itemBuilder: (context, i) {
+            if (i == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Категории',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
               );
-            },
-          ),
-        ],
-      ),
+            }
+            final section = sections[i - 1];
+            return ListTile(
+              title: Text(section.name),
+              trailing: const Icon(Icons.arrow_forward_ios),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CategoryScreen(
+                      section: section,
+                      allProducts: const [], // товары грузятся внутри CategoryScreen
+                      allSections: sections,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        _ => const SizedBox.shrink(),
+      },
     );
   }
 }
-

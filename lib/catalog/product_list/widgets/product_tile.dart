@@ -62,11 +62,6 @@ class ProductTile extends StatelessWidget {
 
                       const SizedBox(width: 6),
 
-                      if (product.fasovka != null)
-                        _chip(
-                          product.fasovka!,
-                          const Color(0xFFC6C4FF),
-                        ),
                     ],
                   ),
 
