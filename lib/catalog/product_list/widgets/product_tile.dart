@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:html_unescape/html_unescape.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 
 class ProductTile extends StatelessWidget {
@@ -37,9 +38,20 @@ class ProductTile extends StatelessWidget {
               width: 90,
               height: 90,
               child: product.image != null && product.image!.isNotEmpty
-                  ? Image.network(
-                product.image!,
+                  ? CachedNetworkImage(
+                imageUrl: product.image!,
                 fit: BoxFit.cover,
+                placeholder: (context, url) => const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (context, url, error) => const Icon(
+                  Icons.image_not_supported_outlined,
+                  color: Colors.grey,
+                ),
               )
                   : const Icon(Icons.image_not_supported),
             ),
@@ -61,7 +73,6 @@ class ProductTile extends StatelessWidget {
                         ),
 
                       const SizedBox(width: 6),
-
                     ],
                   ),
 
@@ -95,7 +106,6 @@ class ProductTile extends StatelessWidget {
                                 Clipboard.setData(
                                   ClipboardData(text: product.article ?? ''),
                                 );
-
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Артикул скопирован'),
@@ -103,7 +113,7 @@ class ProductTile extends StatelessWidget {
                                 );
                               },
                               child: const Icon(
-                                Icons.copy, // аналог bi-copy
+                                Icons.copy,
                                 size: 16,
                               ),
                             ),

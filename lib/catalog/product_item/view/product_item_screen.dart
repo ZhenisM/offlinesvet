@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -73,16 +74,17 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
           if (product!.image != null && product!.image!.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                product!.image!,
+              child: CachedNetworkImage(
+                imageUrl: product!.image!,
                 height: 260,
-                width: double.infinity,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 260,
-                  color: Colors.grey.shade100,
-                  child: const Icon(Icons.image_not_supported_outlined,
-                      size: 48, color: Colors.grey),
+                placeholder: (context, url) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+                errorWidget: (context, url, error) => const Icon(
+                  Icons.image_not_supported_outlined,
+                  size: 48,
+                  color: Colors.grey,
                 ),
               ),
             ),
