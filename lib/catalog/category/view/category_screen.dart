@@ -6,7 +6,7 @@ import 'package:offlinesvet/common/menu/menu_screen.dart';
 
 class CategoryScreen extends StatefulWidget {
   final Section section;
-  final List<Product> allProducts; // оставляем для совместимости, не используем
+  final List<Product> allProducts;
   final List<Section> allSections;
 
   const CategoryScreen({
@@ -44,7 +44,6 @@ class _CategoryScreenState extends State<CategoryScreen> {
     super.dispose();
   }
 
-  // Подгружаем следующую страницу когда доскроллили до конца
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 300) {
@@ -65,9 +64,11 @@ class _CategoryScreenState extends State<CategoryScreen> {
         sectionId: int.parse(widget.section.id),
         page: _page,
         limit: _limit,
+        section: widget.section, // передаём для офлайн-режима
       );
 
       if (!mounted) return;
+      debugPrint('Секция ${widget.section.id} (${widget.section.name}): ${result.products.length} товаров, hasMore=${result.hasMore}');
       setState(() {
         _products.addAll(result.products);
         _hasMore = result.hasMore;
@@ -116,21 +117,18 @@ class _CategoryScreenState extends State<CategoryScreen> {
     );
   }
 
-  // Считаем сколько элементов в списке:
-  // подкатегории + заголовки + товары + индикатор/ошибка внизу
   int get _itemCount {
     int count = 0;
-    if (widget.section.children.isNotEmpty) count += widget.section.children.length + 1; // заголовок + дети
-    count += 1; // заголовок "Товары"
+    if (widget.section.children.isNotEmpty) count += widget.section.children.length + 1;
+    count += 1;
     count += _products.length;
-    if (_loading || _error != null || !_hasMore && _products.isNotEmpty) count += 1; // футер
+    if (_loading || _error != null || !_hasMore && _products.isNotEmpty) count += 1;
     return count;
   }
 
   Widget _buildItem(BuildContext context, int i) {
     int offset = 0;
 
-    // Подкатегории
     if (widget.section.children.isNotEmpty) {
       if (i == 0) {
         return Padding(
@@ -160,23 +158,22 @@ class _CategoryScreenState extends State<CategoryScreen> {
       offset = widget.section.children.length + 1;
     }
 
-    // Заголовок "Товары"
     if (i == offset) {
       return Padding(
         padding: const EdgeInsets.only(top: 8, bottom: 8),
-        child: Text('Товары (${_products.length}${_hasMore ? '+' : ''})',
-            style: Theme.of(context).textTheme.titleLarge),
+        child: Text(
+          'Товары (${_products.length}${_hasMore ? '+' : ''})',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
       );
     }
     offset += 1;
 
-    // Товары
     final productIndex = i - offset;
     if (productIndex < _products.length) {
       return ProductTile(product: _products[productIndex]);
     }
 
-    // Футер: загрузка / ошибка / конец списка
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -201,8 +198,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
-          child: Text('Все товары загружены: ${_products.length}',
-              style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          child: Text(
+            'Все товары загружены: ${_products.length}',
+            style: const TextStyle(color: Colors.grey, fontSize: 13),
+          ),
         ),
       );
     }
