@@ -47,19 +47,19 @@ class CustomerStorage {
     if (token == null) return null;
 
     final prefs = await SharedPreferences.getInstance();
-    final activeId = prefs.getString(_activeIdKey(token));
-    if (activeId == null) return null;
+    final activeKey = prefs.getString(_activeIdKey(token));
+    if (activeKey == null) return null;
 
     final all = await loadAll();
     for (final c in all) {
-      if (c.contactId == activeId) return c;
+      if (c.storageKey == activeKey) return c;
     }
     return null;
   }
 
   /// Добавляет/обновляет клиента в списке менеджера и делает его активным.
   /// Используется как при создании нового контакта+лида, так и при выборе
-  /// уже существующего контакта — в обоих случаях он становится текущим.
+  /// уже существующего контакта/компании — в обоих случаях он становится текущим.
   static Future<void> setActive(Customer customer) async {
     final token = await _currentToken();
     if (token == null) {
@@ -70,7 +70,7 @@ class CustomerStorage {
     final prefs = await SharedPreferences.getInstance();
     final all = await loadAll();
 
-    final idx = all.indexWhere((c) => c.contactId == customer.contactId);
+    final idx = all.indexWhere((c) => c.storageKey == customer.storageKey);
     if (idx >= 0) {
       all[idx] = customer;
     } else {
@@ -79,7 +79,7 @@ class CustomerStorage {
 
     final encoded = jsonEncode(all.map((c) => c.toJson()).toList());
     await prefs.setString(_customersKey(token), encoded);
-    await prefs.setString(_activeIdKey(token), customer.contactId);
+    await prefs.setString(_activeIdKey(token), customer.storageKey);
   }
 
   /// Очищает список клиентов текущего менеджера (например, при логауте).

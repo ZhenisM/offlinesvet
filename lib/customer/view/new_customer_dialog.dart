@@ -88,6 +88,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
 
       final customer = Customer(
         contactId: contactId,
+        isCompany: false,
         leadId: leadId,
         name: name,
         phone: phone,
@@ -116,6 +117,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   Future<void> _selectExisting(CustomerSearchResult match) async {
     final customer = Customer(
       contactId: match.contactId,
+      isCompany: false,
       leadId: null, // лид не создаём — клиент уже существует
       name: match.name,
       lastName: match.lastName,

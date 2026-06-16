@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:offlinesvet/auth/auth_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/view/new_customer_dialog.dart';
-import 'package:offlinesvet/customer/view/search_customer_dialog.dart';
+import 'package:offlinesvet/customer/view/search_customer_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -38,7 +38,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _openSearchCustomer() async {
-    final selected = await showSearchCustomerDialog(context);
+    final selected = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const SearchCustomerScreen()),
+    );
     if (selected == true) {
       _loadActiveCustomer();
     }
@@ -165,6 +167,10 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     final customer = _activeCustomer!;
+    final subtitle = customer.isCompany
+        ? customer.bin
+        : '${customer.phone} · ${customer.type.label}';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -172,7 +178,10 @@ class _MainScreenState extends State<MainScreen> {
           children: [
             CircleAvatar(
               backgroundColor: Colors.blue.shade50,
-              child: const Icon(Icons.person, color: Color(0xFF005095)),
+              child: Icon(
+                customer.isCompany ? Icons.business_outlined : Icons.person,
+                color: const Color(0xFF005095),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -180,7 +189,7 @@ class _MainScreenState extends State<MainScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Текущий клиент',
+                    customer.isCompany ? 'Текущая компания' : 'Текущий клиент',
                     style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   Text(
@@ -191,7 +200,7 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                   Text(
-                    '${customer.phone} · ${customer.type.label}',
+                    subtitle,
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
                 ],
