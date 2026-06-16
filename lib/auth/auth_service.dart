@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:offlinesvet/customer/customer.dart';
 
 class AuthService {
 
@@ -13,6 +14,10 @@ class AuthService {
         body: {"token": token},
       );
     }
+
+    // Важно: чистим клиентов ДО удаления токена — CustomerStorage
+    // использует auth_token как namespace и не найдёт данные после.
+    await CustomerStorage.clearAll();
 
     await prefs.remove("auth_token");
   }
