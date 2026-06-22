@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
+import 'package:offlinesvet/common/menu/menu_screen.dart';
+import 'package:offlinesvet/repositories/products/products.dart';
+import 'package:offlinesvet/cart/view/add_to_cart_sheet.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -11,6 +16,35 @@ class ProductItemScreen extends StatefulWidget {
 
 class _ProductItemScreenState extends State<ProductItemScreen> {
   Product? product;
+  final _productsRepository = ProductsRepository(dio: Dio());
+  List<Section>? _sections;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSections();
+  }
+
+  Future<void> _loadSections() async {
+    try {
+      final sections = await _productsRepository.getSections();
+      if (!mounted) return;
+      setState(() => _sections = sections);
+    } catch (_) {
+      // молча — меню покажет только "На главную"
+    }
+  }
+
+  void _menuOpen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MenuScreen(
+          sections: _sections ?? const [],
+          products: const [],
+        ),
+      ),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -35,25 +69,35 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
       appBar: AppBar(
         title: const Text('Товар'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.menu_outlined),
+            onPressed: _menuOpen,
+          ),
+        ],
       ),
 
-      // Кнопка "В корзину" внизу экрана
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: FilledButton.icon(
-            onPressed: () {
-              // TODO: добавить в корзину
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Корзина пока недоступна')),
-              );
-            },
-            icon: const Icon(Icons.shopping_cart_outlined),
-            label: const Text('В корзину'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
+      // Кнопка "В корзину" сверху, под ней панель навигации (2 иконки).
+      // Кнопка визуально слита с панелью — фон/закругление/тень несёт
+      // только AppBottomNavBar снизу, чтобы не было видимой границы.
+      bottomNavigationBar: Container(
+        color: Colors.white,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: FilledButton.icon(
+                onPressed: () => showAddToCartSheet(context, product!),
+                icon: const Icon(Icons.shopping_cart_outlined),
+                label: const Text('В корзину'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+              ),
             ),
-          ),
+            const AppBottomNavBar(currentTab: AppBottomTab.catalog),
+          ],
         ),
       ),
 

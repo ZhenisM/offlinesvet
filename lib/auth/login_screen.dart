@@ -44,9 +44,13 @@ class _LoginScreenState extends State<LoginScreen > {
 
         if (data["result"] != null) {
           String token = data["result"]["token"];
+          String? userId = data["result"]["user_id"]?.toString();
 
           SharedPreferences prefs = await SharedPreferences.getInstance();
           await prefs.setString("auth_token", token);
+          if (userId != null) {
+            await prefs.setString("user_id", userId);
+          }
 
           Navigator.pushReplacementNamed(context, "/home");
         } else {

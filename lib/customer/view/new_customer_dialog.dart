@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
+import 'package:offlinesvet/cart/cart.dart';
 import 'package:offlinesvet/customer/customer.dart';
 
 /// Показывает анкету "Новый клиент" как модальный bottom sheet.
@@ -30,6 +31,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   final _commentController = TextEditingController();
 
   final _bitrixService = BitrixService(dio: Dio());
+  final _cartApiService = CartApiService(dio: Dio());
 
   CustomerType _type = CustomerType.client;
   String _sourceId = defaultSourceId;
@@ -96,10 +98,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
         selectedAt: DateTime.now(),
       );
 
-      await CustomerStorage.setActive(customer);
-
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
+      await _finalizeCustomerSelection(customer);
     } on NoInternetException {
       setState(() {
         _error = 'Нет интернета';
@@ -115,6 +114,11 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
 
   /// Менеджер подтвердил выбор уже существующего контакта из найденных совпадений.
   Future<void> _selectExisting(CustomerSearchResult match) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
     final customer = Customer(
       contactId: match.contactId,
       isCompany: false,
@@ -126,10 +130,40 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
       selectedAt: DateTime.now(),
     );
 
+    try {
+      await _finalizeCustomerSelection(customer);
+    } on NoInternetException {
+      setState(() {
+        _error = 'Нет интернета';
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Не удалось создать корзину для клиента';
+        _loading = false;
+      });
+    }
+  }
+
+  /// Сохраняет клиента как активного, создаёт для него новую корзину на
+  /// сервере (даже если у клиента уже есть другие корзины — создаётся
+  /// НОВАЯ, как и было решено) и сразу открывает каталог товаров.
+  Future<void> _finalizeCustomerSelection(Customer customer) async {
     await CustomerStorage.setActive(customer);
+
+    final managerId = await CustomerStorage.currentManagerId();
+    if (managerId != null) {
+      await _cartApiService.createCart(
+        managerId: managerId,
+        customer: customer,
+      );
+    } else {
+      debugPrint('_finalizeCustomerSelection: manager_id не найден, корзина не создана');
+    }
 
     if (!mounted) return;
     Navigator.of(context).pop(true);
+    Navigator.of(context).pushReplacementNamed('/products-list');
   }
 
   @override
@@ -283,17 +317,32 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
               title: Text(m.fullName),
               subtitle: Text(m.phone),
               trailing: FilledButton(
-                onPressed: () => _selectExisting(m),
-                child: const Text('Выбрать'),
+                onPressed: _loading ? null : () => _selectExisting(m),
+                child: _loading
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text('Выбрать'),
               ),
             ),
           ),
         ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(_error!, style: const TextStyle(color: Colors.red)),
+        ],
         const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
           child: TextButton(
-            onPressed: () => setState(() => _existingMatches = null),
+            onPressed: _loading
+                ? null
+                : () => setState(() => _existingMatches = null),
             child: const Text('Отмена'),
           ),
         ),

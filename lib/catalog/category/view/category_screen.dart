@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
+import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 
 class CategoryScreen extends StatefulWidget {
   final Section section;
@@ -114,6 +115,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
         itemCount: _itemCount,
         itemBuilder: (context, i) => _buildItem(context, i),
       ),
+      bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
     );
   }
 

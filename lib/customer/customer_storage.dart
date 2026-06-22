@@ -4,30 +4,39 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/customer/models/customer_model.dart';
 
 /// Хранит список клиентов, с которыми работал менеджер, и текущего
-/// активного клиента — по аналогии с будущей мультикорзиной
-/// (HL-блок Multibaskets на prons.kz): один менеджер -> много клиентов,
-/// у каждого своя "корзина" (пока без товаров).
+/// активного клиента — по аналогии с мультикорзиной (HL-блок Multibaskets
+/// на prons.kz, поле UF_MULTIBASKETS_MANAGER_ID): один менеджер -> много
+/// клиентов, у каждого своя "корзина" (пока без товаров).
 ///
-/// Список привязывается к auth_token менеджера (namespace), так как
-/// в текущем API login.php/check.php нет стабильного manager_id —
-/// другого идентификатора менеджера на клиенте сейчас нет.
+/// Список привязывается к user_id менеджера (numeric ID из Bitrix,
+/// возвращается login.php/check.php) — он стабилен между сессиями,
+/// в отличие от auth_token, который перевыпускается при каждом логине.
 class CustomerStorage {
-  static const _tokenKey = 'auth_token';
-  static String _customersKey(String token) => 'customers_$token';
-  static String _activeIdKey(String token) => 'active_customer_id_$token';
+  static const _userIdKey = 'user_id';
+  static String _customersKey(String userId) => 'customers_$userId';
+  static String _activeIdKey(String userId) => 'active_customer_id_$userId';
 
-  static Future<String?> _currentToken() async {
+  static Future<String?> _currentUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+    return prefs.getString(_userIdKey);
+  }
+
+  /// Публичный доступ к user_id менеджера как числу — нужен для вызовов
+  /// CartApiService (manager_id обязателен при создании/переключении корзин).
+  /// Возвращает null, если пользователь не залогинен или user_id не сохранён.
+  static Future<int?> currentManagerId() async {
+    final raw = await _currentUserId();
+    if (raw == null) return null;
+    return int.tryParse(raw);
   }
 
   /// Список всех клиентов, выбранных/созданных текущим менеджером.
   static Future<List<Customer>> loadAll() async {
-    final token = await _currentToken();
-    if (token == null) return [];
+    final userId = await _currentUserId();
+    if (userId == null) return [];
 
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_customersKey(token));
+    final raw = prefs.getString(_customersKey(userId));
     if (raw == null || raw.isEmpty) return [];
 
     try {
@@ -43,11 +52,11 @@ class CustomerStorage {
 
   /// Текущий активный клиент (для которого собирается корзина), либо null.
   static Future<Customer?> loadActive() async {
-    final token = await _currentToken();
-    if (token == null) return null;
+    final userId = await _currentUserId();
+    if (userId == null) return null;
 
     final prefs = await SharedPreferences.getInstance();
-    final activeKey = prefs.getString(_activeIdKey(token));
+    final activeKey = prefs.getString(_activeIdKey(userId));
     if (activeKey == null) return null;
 
     final all = await loadAll();
@@ -61,9 +70,9 @@ class CustomerStorage {
   /// Используется как при создании нового контакта+лида, так и при выборе
   /// уже существующего контакта/компании — в обоих случаях он становится текущим.
   static Future<void> setActive(Customer customer) async {
-    final token = await _currentToken();
-    if (token == null) {
-      debugPrint('CustomerStorage.setActive: нет auth_token, отмена');
+    final userId = await _currentUserId();
+    if (userId == null) {
+      debugPrint('CustomerStorage.setActive: нет user_id, отмена');
       return;
     }
 
@@ -78,17 +87,17 @@ class CustomerStorage {
     }
 
     final encoded = jsonEncode(all.map((c) => c.toJson()).toList());
-    await prefs.setString(_customersKey(token), encoded);
-    await prefs.setString(_activeIdKey(token), customer.storageKey);
+    await prefs.setString(_customersKey(userId), encoded);
+    await prefs.setString(_activeIdKey(userId), customer.storageKey);
   }
 
   /// Очищает список клиентов текущего менеджера (например, при логауте).
   static Future<void> clearAll() async {
-    final token = await _currentToken();
-    if (token == null) return;
+    final userId = await _currentUserId();
+    if (userId == null) return;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_customersKey(token));
-    await prefs.remove(_activeIdKey(token));
+    await prefs.remove(_customersKey(userId));
+    await prefs.remove(_activeIdKey(userId));
   }
 }

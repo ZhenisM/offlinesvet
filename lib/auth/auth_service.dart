@@ -15,10 +15,11 @@ class AuthService {
       );
     }
 
-    // Важно: чистим клиентов ДО удаления токена — CustomerStorage
-    // использует auth_token как namespace и не найдёт данные после.
+    // Важно: чистим клиентов ДО удаления user_id — CustomerStorage
+    // использует user_id как namespace и не найдёт данные после.
     await CustomerStorage.clearAll();
 
     await prefs.remove("auth_token");
+    await prefs.remove("user_id");
   }
 }

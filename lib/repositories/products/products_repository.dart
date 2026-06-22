@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -56,7 +57,46 @@ class ProductsRepository {
   }
 
   // -------------------------------------------------------
-  // Товары — передаём section чтобы при офлайне
+  // Товары по списку ID (для отображения в мультикорзине)
+  // -------------------------------------------------------
+  Future<List<Product>> getProductsByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+
+    try {
+      final response = await dio.get(
+        '$_baseUrl/get_products_by_ids.php',
+        queryParameters: {'ids': ids.join(',')},
+        options: Options(responseType: ResponseType.plain),
+      );
+
+      // Явно декодируем — не доверяем автопарсингу Dio,
+      // сервер может вернуть text/html Content-Type даже при JSON-теле.
+      final raw = response.data as String;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final productsJson = decoded['products'] as List<dynamic>;
+
+      debugPrint('getProductsByIds: получили ${productsJson.length} товаров');
+
+      return productsJson
+          .map((e) => Product.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('getProductsByIds: ошибка ($e), ищем в кэше');
+      try {
+        final allCached = await Future.wait(
+          ids.map((id) => LocalDb.loadProductsBySection(id)),
+        );
+        return allCached
+            .expand((list) => list)
+            .where((p) => ids.contains(p.id))
+            .toList();
+      } catch (_) {
+        return [];
+      }
+    }
+  }
+
+  // -------------------------------------------------------
   // собрать товары из всех дочерних секций
   // -------------------------------------------------------
   Future<({List<Product> products, bool hasMore})> getProducts({

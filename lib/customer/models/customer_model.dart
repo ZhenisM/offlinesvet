@@ -71,6 +71,76 @@ class Customer {
   /// (заменяет старый contactId-only ключ — работает для обоих типов).
   String get storageKey => isCompany ? 'company_$companyId' : 'contact_$contactId';
 
+  /// Сериализация в формат UF_MULTIBASKETS_CLIENT_INFO для HL-блока
+  /// Multibaskets (cart_save.php, action=create).
+  ///
+  /// В отличие от формата на сайте (который иногда пишет урезанный JSON
+  /// без ENTITY/ID для клиентов без ещё созданного контакта — там лид
+  /// создаётся раньше контакта), наше приложение всегда уже имеет
+  /// contactId/companyId к моменту создания корзины, поэтому всегда
+  /// пишем полный формат с ENTITY/ID/TYPE_ID — это сохраняет прямую
+  /// ссылку на CRM-сущность для будущих этапов (оформление заказа и т.д.)
+  Map<String, dynamic> toMultibasketsClientInfo() {
+    if (isCompany) {
+      return {
+        'ENTITY': 'COMPANY',
+        'ID': companyId,
+        'TITLE': name,
+        'BIN': bin,
+      };
+    }
+    return {
+      'ENTITY': 'CONTACT',
+      'ID': contactId,
+      'TYPE_ID': type.bitrixFieldId,
+      'TYPE': type.label,
+      'NAME': fullName,
+      'PHONE': phone,
+      'COMPANY_BIN': null,
+    };
+  }
+
+  /// Обратное восстановление Customer из clientInfo, как он приходит от
+  /// cart_load.php. Используется при переключении текущей корзины на
+  /// экране мультикорзины — чтобы синхронизировать CustomerStorage
+  /// (главный экран показывает того же клиента, что и активная корзина).
+  ///
+  /// Это приложение всегда пишет в Multibaskets полный формат
+  /// (ENTITY/ID/TYPE_ID), но на всякий случай не падает, если встретится
+  /// урезанный формат с сайта — просто восстановит частичные данные.
+  static Customer fromMultibasketsClientInfo(
+    Map<String, dynamic> clientInfo, {
+    required DateTime selectedAt,
+  }) {
+    final entity = clientInfo['ENTITY']?.toString();
+    final isCompanyEntity = entity == 'COMPANY';
+
+    if (isCompanyEntity) {
+      return Customer(
+        companyId: clientInfo['ID']?.toString(),
+        isCompany: true,
+        name: clientInfo['TITLE']?.toString() ?? '',
+        bin: clientInfo['BIN']?.toString() ?? '',
+        type: CustomerType.client,
+        selectedAt: selectedAt,
+      );
+    }
+
+    final typeId = clientInfo['TYPE_ID']?.toString();
+    final type = typeId == CustomerType.designer.bitrixFieldId
+        ? CustomerType.designer
+        : CustomerType.client;
+
+    return Customer(
+      contactId: clientInfo['ID']?.toString(),
+      isCompany: false,
+      name: clientInfo['NAME']?.toString() ?? '',
+      phone: clientInfo['PHONE']?.toString() ?? '',
+      type: type,
+      selectedAt: selectedAt,
+    );
+  }
+
   Customer copyWith({
     String? contactId,
     String? companyId,

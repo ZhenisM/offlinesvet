@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/catalog/category/view/category_screen.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
+import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -114,6 +115,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
         ),
         _ => const SizedBox.shrink(),
       },
+      bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
     );
   }
 }

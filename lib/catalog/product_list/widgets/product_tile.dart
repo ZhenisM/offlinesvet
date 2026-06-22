@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
+import 'package:offlinesvet/cart/view/add_to_cart_sheet.dart';
 
 class ProductTile extends StatelessWidget {
   const ProductTile({
@@ -123,9 +124,7 @@ class ProductTile extends StatelessWidget {
 
                       /// 🛒 КНОПКА
                       TextButton(
-                        onPressed: () {
-                          print('Добавить в корзину: ${product.name}');
-                        },
+                        onPressed: () => showAddToCartSheet(context, product),
                         child: const Text('В корзину'),
                       ),
                     ],

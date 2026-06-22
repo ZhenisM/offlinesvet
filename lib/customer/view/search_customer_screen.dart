@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
+import 'package:offlinesvet/cart/cart.dart';
 import 'package:offlinesvet/customer/customer.dart';
 
 enum _SearchEntity { contact, company }
@@ -99,6 +100,7 @@ class _ContactSearchView extends StatefulWidget {
 class _ContactSearchViewState extends State<_ContactSearchView> {
   final _phoneController = TextEditingController();
   final _bitrixService = BitrixService(dio: Dio());
+  final _cartApiService = CartApiService(dio: Dio());
 
   bool _loading = false;
   String? _error;
@@ -143,6 +145,11 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
   }
 
   Future<void> _select(CustomerSearchResult match) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
     final customer = Customer(
       contactId: match.contactId,
       isCompany: false,
@@ -154,10 +161,31 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
       selectedAt: DateTime.now(),
     );
 
-    await CustomerStorage.setActive(customer);
+    try {
+      await CustomerStorage.setActive(customer);
 
-    if (!mounted) return;
-    Navigator.of(context).pop(true);
+      final managerId = await CustomerStorage.currentManagerId();
+      if (managerId != null) {
+        await _cartApiService.createCart(
+          managerId: managerId,
+          customer: customer,
+        );
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      Navigator.of(context).pushReplacementNamed('/products-list');
+    } on NoInternetException {
+      setState(() {
+        _error = 'Нет интернета';
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Не удалось создать корзину для клиента';
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -220,8 +248,17 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
                     title: Text(m.fullName),
                     subtitle: Text(m.phone),
                     trailing: FilledButton(
-                      onPressed: () => _select(m),
-                      child: const Text('Выбрать'),
+                      onPressed: _loading ? null : () => _select(m),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Выбрать'),
                     ),
                   ),
                 ),
@@ -248,6 +285,7 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
   final _titleController = TextEditingController();
   final _binController = TextEditingController();
   final _pronsApi = PronsApiService(dio: Dio());
+  final _cartApiService = CartApiService(dio: Dio());
 
   bool _loading = false;
   String? _error;
@@ -299,6 +337,11 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
   }
 
   Future<void> _select(CompanySearchResult match) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
     final customer = Customer(
       companyId: match.companyId,
       isCompany: true,
@@ -309,10 +352,31 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
       selectedAt: DateTime.now(),
     );
 
-    await CustomerStorage.setActive(customer);
+    try {
+      await CustomerStorage.setActive(customer);
 
-    if (!mounted) return;
-    Navigator.of(context).pop(true);
+      final managerId = await CustomerStorage.currentManagerId();
+      if (managerId != null) {
+        await _cartApiService.createCart(
+          managerId: managerId,
+          customer: customer,
+        );
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      Navigator.of(context).pushReplacementNamed('/products-list');
+    } on NoInternetException {
+      setState(() {
+        _error = 'Нет интернета';
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Не удалось создать корзину для клиента';
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -382,8 +446,17 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
                     title: Text(m.name),
                     subtitle: Text(m.bin),
                     trailing: FilledButton(
-                      onPressed: () => _select(m),
-                      child: const Text('Выбрать'),
+                      onPressed: _loading ? null : () => _select(m),
+                      child: _loading
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Выбрать'),
                     ),
                   ),
                 ),
