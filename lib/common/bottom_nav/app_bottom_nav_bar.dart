@@ -1,21 +1,16 @@
 import 'package:flutter/material.dart';
 
-/// Какая вкладка активна на нижней панели — используется для подсветки
-/// и для решения, нужно ли вообще переходить при нажатии (если уже там).
 enum AppBottomTab { catalog, cart }
 
-/// Плавающая нижняя панель навигации — общая для каталога и мультикорзины.
-/// На главном экране, экранах авторизации и поиска клиента панель не
-/// используется вообще (эти экраны просто не оборачиваются в этот виджет).
-///
-/// Сейчас реализованы только 2 рабочие иконки (Каталог, Корзина).
-/// Остальные позиции на референсном дизайне — заглушки на будущее,
-/// сюда не добавляются, пока не появится реальная функция за ними —
-/// нет смысла показывать неактивные кнопки, которые выглядят как баг.
 class AppBottomNavBar extends StatelessWidget {
-  const AppBottomNavBar({super.key, required this.currentTab});
+  const AppBottomNavBar({
+    super.key,
+    required this.currentTab,
+    this.onCartTap,
+  });
 
-  final AppBottomTab currentTab;
+  final AppBottomTab? currentTab;
+  final VoidCallback? onCartTap; // если передан — используется вместо стандартного перехода
 
   void _goToCatalog(BuildContext context) {
     if (currentTab == AppBottomTab.catalog) return;
@@ -23,6 +18,10 @@ class AppBottomNavBar extends StatelessWidget {
   }
 
   void _goToCart(BuildContext context) {
+    if (onCartTap != null) {
+      onCartTap!();
+      return;
+    }
     if (currentTab == AppBottomTab.cart) return;
     Navigator.of(context).pushReplacementNamed('/cart');
   }

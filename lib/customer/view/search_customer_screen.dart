@@ -6,8 +6,6 @@ import 'package:offlinesvet/customer/customer.dart';
 
 enum _SearchEntity { contact, company }
 
-/// Полноценный экран поиска клиента — открывается через Navigator.push.
-/// Возвращает true, если клиент был найден и выбран как активный.
 class SearchCustomerScreen extends StatefulWidget {
   const SearchCustomerScreen({super.key});
 
@@ -21,84 +19,121 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Найти клиента')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Переключатель Контакт / Компания — как на сайте
-            Row(
-              children: [
-                Expanded(
-                  child: _EntityToggleButton(
-                    label: 'Контакт',
-                    selected: _entity == _SearchEntity.contact,
-                    onTap: () => setState(() => _entity = _SearchEntity.contact),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _EntityToggleButton(
-                    label: 'Компания',
-                    selected: _entity == _SearchEntity.company,
-                    onTap: () => setState(() => _entity = _SearchEntity.company),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _entity == _SearchEntity.contact
-                  ? const _ContactSearchView()
-                  : const _CompanySearchView(),
-            ),
-          ],
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF4CAF50),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text(
+          'Существующий клиент',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
+        actions: [
+          SizedBox(
+            width: 130,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const TextField(
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Поиск',
+                    hintStyle: TextStyle(color: Colors.white70, fontSize: 13),
+                    prefixIcon: Icon(Icons.search, color: Colors.white70, size: 18),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(right: 12, left: 4),
+            child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 22),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Переключатель Контакты / Компания
+          Container(
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(children: [
+              Expanded(child: _Tab(
+                label: 'Контакты',
+                selected: _entity == _SearchEntity.contact,
+                onTap: () => setState(() => _entity = _SearchEntity.contact),
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: _Tab(
+                label: 'Компания',
+                selected: _entity == _SearchEntity.company,
+                onTap: () => setState(() => _entity = _SearchEntity.company),
+              )),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: _entity == _SearchEntity.contact
+                ? const _ContactSearchView()
+                : const _CompanySearchView(),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _EntityToggleButton extends StatelessWidget {
-  const _EntityToggleButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
+// -------------------------------------------------------
+// Таб переключатель
+// -------------------------------------------------------
+class _Tab extends StatelessWidget {
+  const _Tab({required this.label, required this.selected, required this.onTap});
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onTap,
-      style: OutlinedButton.styleFrom(
-        backgroundColor: selected ? const Color(0xFF3C5AEC) : Colors.white,
-        foregroundColor: selected ? Colors.white : Colors.black,
-        side: const BorderSide(color: Color(0xFF3C5AEC)),
-        padding: const EdgeInsets.symmetric(vertical: 12),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF4CAF50) : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+            color: selected ? Colors.white : Colors.black54,
+          ),
+        ),
       ),
-      child: Text(label),
     );
   }
 }
 
-// ===========================================================
-// Поиск контакта (физлицо) по телефону — через Bitrix24
-// ===========================================================
-
+// -------------------------------------------------------
+// Поиск контакта
+// -------------------------------------------------------
 class _ContactSearchView extends StatefulWidget {
   const _ContactSearchView();
-
   @override
   State<_ContactSearchView> createState() => _ContactSearchViewState();
 }
 
 class _ContactSearchViewState extends State<_ContactSearchView> {
-  final _phoneController = TextEditingController();
+  final _phoneCtrl     = TextEditingController();
   final _bitrixService = BitrixService(dio: Dio());
   final _cartApiService = CartApiService(dio: Dio());
 
@@ -108,48 +143,26 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _search() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty) {
-      setState(() => _error = 'Введите телефон');
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-      _results = null;
-    });
-
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) { setState(() => _error = 'Введите телефон'); return; }
+    setState(() { _loading = true; _error = null; _results = null; });
     try {
       final results = await _bitrixService.searchContactsByPhone(phone);
-      setState(() {
-        _results = results;
-        _loading = false;
-      });
+      setState(() { _results = results; _loading = false; });
     } on NoInternetException {
-      setState(() {
-        _error = 'Нет интернета';
-        _loading = false;
-      });
+      setState(() { _error = 'Нет интернета'; _loading = false; });
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
   Future<void> _select(CustomerSearchResult match) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
+    setState(() { _loading = true; _error = null; });
     final customer = Customer(
       contactId: match.contactId,
       isCompany: false,
@@ -160,131 +173,114 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
       type: CustomerType.client,
       selectedAt: DateTime.now(),
     );
-
     try {
       await CustomerStorage.setActive(customer);
-
       final managerId = await CustomerStorage.currentManagerId();
       if (managerId != null) {
-        await _cartApiService.createCart(
-          managerId: managerId,
-          customer: customer,
-        );
+        await _cartApiService.createCart(managerId: managerId, customer: customer);
       }
-
       if (!mounted) return;
       Navigator.of(context).pop(true);
       Navigator.of(context).pushReplacementNamed('/products-list');
     } on NoInternetException {
-      setState(() {
-        _error = 'Нет интернета';
-        _loading = false;
-      });
+      setState(() { _error = 'Нет интернета'; _loading = false; });
     } catch (e) {
-      setState(() {
-        _error = 'Не удалось создать корзину для клиента';
-        _loading = false;
-      });
+      setState(() { _error = 'Не удалось создать корзину'; _loading = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Телефон',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => _search(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _loading ? null : _search,
-                child: _loading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text('Найти'),
-              ),
-            ],
-          ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // Поле телефона
+        _SearchField(
+          controller: _phoneCtrl,
+          hint: 'Номер телефона',
+          keyboardType: TextInputType.phone,
+          onSubmitted: (_) => _search(),
+        ),
+        const SizedBox(height: 12),
 
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-          ],
+        // Кнопка поиск
+        _GreenButton(
+          label: 'Поиск',
+          loading: _loading && _results == null,
+          onTap: _search,
+        ),
 
-          if (_results != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Найдено клиентов: ${_results!.length}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            if (_results!.isEmpty)
-              const Text('Клиент с таким номером не найден')
-            else
-              ..._results!.map(
-                (m) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(m.fullName),
-                    subtitle: Text(m.phone),
-                    trailing: FilledButton(
-                      onPressed: _loading ? null : () => _select(m),
-                      child: _loading
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Выбрать'),
-                    ),
-                  ),
-                ),
-              ),
-          ],
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
         ],
-      ),
+
+        // Результаты
+        if (_results != null) ...[
+          const SizedBox(height: 16),
+          if (_results!.isEmpty)
+            const Text('Клиент с таким номером не найден',
+              style: TextStyle(color: Colors.grey))
+          else
+            ..._results!.map((m) => _ContactResultCard(
+              result: m,
+              loading: _loading,
+              onSelect: () => _select(m),
+            )),
+        ],
+      ]),
     );
   }
 }
 
-// ===========================================================
-// Поиск компании по названию или БИН/ИИН — через prons.kz (HL CompanyList)
-// ===========================================================
+// -------------------------------------------------------
+// Карточка результата — контакт
+// -------------------------------------------------------
+class _ContactResultCard extends StatelessWidget {
+  const _ContactResultCard({
+    required this.result,
+    required this.loading,
+    required this.onSelect,
+  });
+  final CustomerSearchResult result;
+  final bool loading;
+  final VoidCallback onSelect;
 
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _InfoRow(label: 'Имя', value: result.fullName),
+        _InfoRow(label: 'Телефон', value: result.phone),
+        _InfoRow(label: 'Тип', value: 'Клиент'),
+        const SizedBox(height: 4),
+        _GreenButton(label: 'Выбрать', loading: loading, onTap: onSelect),
+        const SizedBox(height: 4),
+      ]),
+    );
+  }
+}
+
+// -------------------------------------------------------
+// Поиск компании
+// -------------------------------------------------------
 class _CompanySearchView extends StatefulWidget {
   const _CompanySearchView();
-
   @override
   State<_CompanySearchView> createState() => _CompanySearchViewState();
 }
 
 class _CompanySearchViewState extends State<_CompanySearchView> {
-  final _titleController = TextEditingController();
-  final _binController = TextEditingController();
-  final _pronsApi = PronsApiService(dio: Dio());
+  final _titleCtrl      = TextEditingController();
+  final _binCtrl        = TextEditingController();
+  final _pronsApi       = PronsApiService(dio: Dio());
   final _cartApiService = CartApiService(dio: Dio());
 
   bool _loading = false;
@@ -293,55 +289,33 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _binController.dispose();
+    _titleCtrl.dispose();
+    _binCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _search() async {
-    final title = _titleController.text.trim();
-    final bin = _binController.text.trim();
-
+    final title = _titleCtrl.text.trim();
+    final bin   = _binCtrl.text.trim();
     if (title.isEmpty && bin.isEmpty) {
       setState(() => _error = 'Введите название или БИН/ИИН');
       return;
     }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-      _results = null;
-    });
-
+    setState(() { _loading = true; _error = null; _results = null; });
     try {
-      // БИН приоритетнее, если заполнен — это точный поиск.
       final results = bin.isNotEmpty
           ? await _pronsApi.searchCompanies(query: bin, byBin: true)
           : await _pronsApi.searchCompanies(query: title, byBin: false);
-
-      setState(() {
-        _results = results;
-        _loading = false;
-      });
+      setState(() { _results = results; _loading = false; });
     } on NoInternetException {
-      setState(() {
-        _error = 'Нет интернета';
-        _loading = false;
-      });
+      setState(() { _error = 'Нет интернета'; _loading = false; });
     } catch (e) {
-      setState(() {
-        _error = 'Не удалось выполнить поиск';
-        _loading = false;
-      });
+      setState(() { _error = 'Не удалось выполнить поиск'; _loading = false; });
     }
   }
 
   Future<void> _select(CompanySearchResult match) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
+    setState(() { _loading = true; _error = null; });
     final customer = Customer(
       companyId: match.companyId,
       isCompany: true,
@@ -351,119 +325,198 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
       type: CustomerType.client,
       selectedAt: DateTime.now(),
     );
-
     try {
       await CustomerStorage.setActive(customer);
-
       final managerId = await CustomerStorage.currentManagerId();
       if (managerId != null) {
-        await _cartApiService.createCart(
-          managerId: managerId,
-          customer: customer,
-        );
+        await _cartApiService.createCart(managerId: managerId, customer: customer);
       }
-
       if (!mounted) return;
       Navigator.of(context).pop(true);
       Navigator.of(context).pushReplacementNamed('/products-list');
     } on NoInternetException {
-      setState(() {
-        _error = 'Нет интернета';
-        _loading = false;
-      });
+      setState(() { _error = 'Нет интернета'; _loading = false; });
     } catch (e) {
-      setState(() {
-        _error = 'Не удалось создать корзину для клиента';
-        _loading = false;
-      });
+      setState(() { _error = 'Не удалось создать корзину'; _loading = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _titleController,
-            decoration: const InputDecoration(
-              labelText: 'Наименование',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _search(),
-          ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _SearchField(
+          controller: _titleCtrl,
+          hint: 'Наименование',
+          onSubmitted: (_) => _search(),
+        ),
+        const SizedBox(height: 10),
+        _SearchField(
+          controller: _binCtrl,
+          hint: 'БИН/ИИН',
+          keyboardType: TextInputType.number,
+          maxLength: 12,
+          onSubmitted: (_) => _search(),
+        ),
+        const SizedBox(height: 12),
+
+        _GreenButton(
+          label: 'Поиск',
+          loading: _loading && _results == null,
+          onTap: _search,
+        ),
+
+        if (_error != null) ...[
           const SizedBox(height: 12),
-          TextField(
-            controller: _binController,
-            keyboardType: TextInputType.number,
-            maxLength: 12,
-            decoration: const InputDecoration(
-              labelText: 'БИН/ИИН',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _search(),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _loading ? null : _search,
-              child: _loading
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Поиск'),
-            ),
-          ),
+          Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+        ],
 
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.red)),
-          ],
+        if (_results != null) ...[
+          const SizedBox(height: 16),
+          if (_results!.isEmpty)
+            const Text('Компания не найдена', style: TextStyle(color: Colors.grey))
+          else
+            ..._results!.map((m) => _CompanyResultCard(
+              result: m,
+              loading: _loading,
+              onSelect: () => _select(m),
+            )),
+        ],
+      ]),
+    );
+  }
+}
 
-          if (_results != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              'Найдено компаний: ${_results!.length}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            if (_results!.isEmpty)
-              const Text('Компания не найдена')
-            else
-              ..._results!.map(
-                (m) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(m.name),
-                    subtitle: Text(m.bin),
-                    trailing: FilledButton(
-                      onPressed: _loading ? null : () => _select(m),
-                      child: _loading
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('Выбрать'),
-                    ),
-                  ),
+// -------------------------------------------------------
+// Карточка результата — компания
+// -------------------------------------------------------
+class _CompanyResultCard extends StatelessWidget {
+  const _CompanyResultCard({
+    required this.result,
+    required this.loading,
+    required this.onSelect,
+  });
+  final CompanySearchResult result;
+  final bool loading;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _InfoRow(label: 'Компания', value: result.name),
+        if (result.bin.isNotEmpty) _InfoRow(label: 'БИН/ИИН', value: result.bin),
+        const SizedBox(height: 4),
+        _GreenButton(label: 'Выбрать', loading: loading, onTap: onSelect),
+        const SizedBox(height: 4),
+      ]),
+    );
+  }
+}
+
+// -------------------------------------------------------
+// Общие виджеты
+// -------------------------------------------------------
+
+class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.hint,
+    this.keyboardType = TextInputType.text,
+    this.maxLength,
+    this.onSubmitted,
+  });
+  final TextEditingController controller;
+  final String hint;
+  final TextInputType keyboardType;
+  final int? maxLength;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        maxLength: maxLength,
+        onSubmitted: onSubmitted,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 15),
+          counterText: '',
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _GreenButton extends StatelessWidget {
+  const _GreenButton({
+    required this.label,
+    required this.loading,
+    required this.onTap,
+  });
+  final String label;
+  final bool loading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: const Color(0xFF4CAF50),
+          borderRadius: BorderRadius.circular(28),
+        ),
+        alignment: Alignment.center,
+        child: loading
+            ? const SizedBox(
+                width: 22, height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-          ],
-        ],
       ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+  final String label, value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontSize: 15)),
+      ]),
     );
   }
 }

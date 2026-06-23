@@ -320,7 +320,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('Оформление заказа')),
         body: const Center(child: CircularProgressIndicator()),
-        bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.cart),
+        bottomNavigationBar: const AppBottomNavBar(currentTab: null),
       );
     }
 
@@ -337,38 +337,47 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ]),
         ),
-        bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.cart),
+        bottomNavigationBar: const AppBottomNavBar(currentTab: null),
       );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: const Text('Оформление заказа'),
-        centerTitle: false,
-        actions: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-              child: TextField(
-                decoration: InputDecoration(
-                  hintText: 'Поиск',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  contentPadding: EdgeInsets.zero,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
+        // Стрелка назад — возврат в корзину
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            // Поиск — компактный, не на всю ширину
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Поиск',
+                    hintStyle: const TextStyle(fontSize: 13),
+                    prefixIcon: const Icon(Icons.search, size: 18),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    contentPadding: EdgeInsets.zero,
+                    isDense: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          const Icon(Icons.qr_code_scanner),
-          const SizedBox(width: 12),
-        ],
+            const SizedBox(width: 4),
+            const Icon(Icons.qr_code_scanner),
+            const SizedBox(width: 12),
+          ],
+        ),
       ),
       body: ListView(
         padding: EdgeInsets.zero,
@@ -413,7 +422,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ]),
             ),
           ),
-          const AppBottomNavBar(currentTab: AppBottomTab.cart),
+          // Нижняя панель — передаём null чтобы кнопка корзины была кликабельной
+          // и нажатие на неё возвращало назад в мультикорзину через pop
+          AppBottomNavBar(
+            currentTab: null,
+            onCartTap: () => Navigator.of(context).pop(),
+          ),
         ],
       ),
     );

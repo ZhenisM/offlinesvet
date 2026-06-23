@@ -682,15 +682,9 @@ class _CartItemTile extends StatelessWidget {
                           : null,
                       child: Text(
                         product?.name ?? 'Товар #${item.productId}',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 13,
-                          color: product != null
-                              ? const Color(0xFF1565C0)
-                              : Colors.black87,
-                          decoration: product != null
-                              ? TextDecoration.underline
-                              : TextDecoration.none,
-                          decorationColor: const Color(0xFF1565C0),
+                          color: Colors.black87,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -22,52 +23,51 @@ class _LoginScreenState extends State<LoginScreen > {
       _errorMessage = null;
     });
 
-    final response = await http.post(
-      Uri.parse("https://prons.kz/ajax/login.php"),
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: {
-        "login": _loginController.text,
-        "password": _passwordController.text,
-      },
-    );
+    try {
+      final response = await http.post(
+        Uri.parse("https://prons.kz/ajax/login.php"),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: {
+          "login": _loginController.text,
+          "password": _passwordController.text,
+        },
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw Exception('Превышено время ожидания. Проверьте интернет-соединение.'),
+      );
 
-    setState(() {
-      _isLoading = false;
-    });
+      if (response.statusCode == 200) {
+        if (response.body.isNotEmpty) {
+          final data = json.decode(response.body);
 
-    if (response.statusCode == 200) {
-      if (response.body.isNotEmpty) {
+          if (data["result"] != null) {
+            String token = data["result"]["token"];
+            String? userId = data["result"]["user_id"]?.toString();
 
-        final data = json.decode(response.body);
+            SharedPreferences prefs = await SharedPreferences.getInstance();
+            await prefs.setString("auth_token", token);
+            if (userId != null) {
+              await prefs.setString("user_id", userId);
+            }
 
-        if (data["result"] != null) {
-          String token = data["result"]["token"];
-          String? userId = data["result"]["user_id"]?.toString();
-
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          await prefs.setString("auth_token", token);
-          if (userId != null) {
-            await prefs.setString("user_id", userId);
+            if (mounted) Navigator.pushReplacementNamed(context, "/home");
+          } else {
+            setState(() {
+              _errorMessage = data["error_description"] ?? "Ошибка авторизации";
+            });
           }
-
-          Navigator.pushReplacementNamed(context, "/home");
         } else {
-          setState(() {
-            _errorMessage = data["error_description"] ?? "Ошибка авторизации";
-          });
+          setState(() => _errorMessage = "Пустой ответ сервера");
         }
-
       } else {
-        setState(() {
-          _errorMessage = "Пустой ответ сервера";
-        });
+        setState(() => _errorMessage = "Ошибка сервера: ${response.statusCode}");
       }
-    } else {
-      setState(() {
-        _errorMessage = "Ошибка сервера: ${response.statusCode}";
-      });
+    } catch (e) {
+      setState(() => _errorMessage = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

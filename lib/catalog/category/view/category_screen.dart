@@ -109,73 +109,88 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ),
         ],
       ),
-      body: ListView.builder(
+      body: CustomScrollView(
         controller: _scrollController,
-        padding: const EdgeInsets.all(16),
-        itemCount: _itemCount,
-        itemBuilder: (context, i) => _buildItem(context, i),
+        slivers: [
+          // Подкатегории (если есть)
+          if (widget.section.children.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  'Подкатегории',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  final child = widget.section.children[i];
+                  return ListTile(
+                    title: Text(child.name),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CategoryScreen(
+                          section: child,
+                          allProducts: const [],
+                          allSections: widget.allSections,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                childCount: widget.section.children.length,
+              ),
+            ),
+            const SliverToBoxAdapter(child: Divider()),
+          ],
+
+          // Заголовок товаров
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                '${_products.length}${_hasMore ? '+' : ''} товар${_productCountSuffix(_products.length)}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
+          ),
+
+          // Сетка товаров — адаптивная: 2 на мобильном, 3 на планшете
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.62,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, i) => ProductTile(product: _products[i]),
+                childCount: _products.length,
+              ),
+            ),
+          ),
+
+          // Лоадер / ошибка / конец списка
+          SliverToBoxAdapter(
+            child: _buildFooter(),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+        ],
       ),
       bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
     );
   }
 
-  int get _itemCount {
-    int count = 0;
-    if (widget.section.children.isNotEmpty) count += widget.section.children.length + 1;
-    count += 1;
-    count += _products.length;
-    if (_loading || _error != null || !_hasMore && _products.isNotEmpty) count += 1;
-    return count;
-  }
-
-  Widget _buildItem(BuildContext context, int i) {
-    int offset = 0;
-
-    if (widget.section.children.isNotEmpty) {
-      if (i == 0) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text('Подкатегории', style: Theme.of(context).textTheme.titleLarge),
-        );
-      }
-      if (i <= widget.section.children.length) {
-        final child = widget.section.children[i - 1];
-        return ListTile(
-          title: Text(child.name),
-          trailing: const Icon(Icons.arrow_forward_ios),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => CategoryScreen(
-                  section: child,
-                  allProducts: const [],
-                  allSections: widget.allSections,
-                ),
-              ),
-            );
-          },
-        );
-      }
-      offset = widget.section.children.length + 1;
-    }
-
-    if (i == offset) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 8, bottom: 8),
-        child: Text(
-          'Товары (${_products.length}${_hasMore ? '+' : ''})',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-      );
-    }
-    offset += 1;
-
-    final productIndex = i - offset;
-    if (productIndex < _products.length) {
-      return ProductTile(product: _products[productIndex]);
-    }
-
+  Widget _buildFooter() {
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -188,10 +203,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
         child: Column(
           children: [
             Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
-            TextButton(
-              onPressed: _loadProducts,
-              child: const Text('Повторить'),
-            ),
+            TextButton(onPressed: _loadProducts, child: const Text('Повторить')),
           ],
         ),
       );
@@ -209,4 +221,15 @@ class _CategoryScreenState extends State<CategoryScreen> {
     }
     return const SizedBox.shrink();
   }
+
+  String _productCountSuffix(int count) {
+    final last = count % 10;
+    final lastTwo = count % 100;
+    if (lastTwo >= 11 && lastTwo <= 14) return 'ов';
+    if (last == 1) return '';
+    if (last >= 2 && last <= 4) return 'а';
+    return 'ов';
+  }
+
 }
+

@@ -86,55 +86,69 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF3F2F7),
       appBar: AppBar(
-        title: Text('Offline-svet'),
+        backgroundColor: const Color(0xFF4CAF50),
+        elevation: 0,
+        title: const Text(
+          'Offline-svet',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: Icon(Icons.logout_outlined),
+            icon: const Icon(Icons.logout_outlined, color: Colors.white),
             onPressed: _confirmLogout,
           ),
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildActiveCustomerCard(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            FilledButton.icon(
-              onPressed: _openNewCustomer,
-              icon: const Icon(Icons.person_add_outlined),
-              label: const Text('Новый клиент'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+            // Анкета лида — зелёная
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _openNewCustomer,
+                icon: const Icon(Icons.person_add_outlined),
+                label: const Text(
+                  'Анкета лида',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
 
-            OutlinedButton.icon(
-              onPressed: _openSearchCustomer,
-              icon: const Icon(Icons.search),
-              label: const Text('Найти клиента'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pushReplacementNamed(context, '/products-list');
-              },
-              icon: const Icon(Icons.storefront_outlined),
-              label: const Text('Каталог'),
-              style: ElevatedButton.styleFrom(
-                elevation: 2,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white,
+            // Существующий клиент — белая без бордера
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _openSearchCustomer,
+                icon: const Icon(Icons.search),
+                label: const Text(
+                  'Существующий клиент',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black87,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
               ),
             ),
           ],
@@ -145,23 +159,22 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildActiveCustomerCard() {
     if (_loadingCustomer) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(child: CircularProgressIndicator()),
-        ),
+      return const SizedBox(
+        height: 80,
+        child: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_activeCustomer == null) {
-      return Card(
-        color: Colors.grey.shade100,
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            'Клиент не выбран',
-            style: TextStyle(color: Colors.grey, fontSize: 15),
-          ),
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Text(
+          'Клиент не выбран',
+          style: TextStyle(color: Colors.grey, fontSize: 15),
         ),
       );
     }
@@ -171,43 +184,46 @@ class _MainScreenState extends State<MainScreen> {
         ? customer.bin
         : '${customer.phone} · ${customer.type.label}';
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: Colors.blue.shade50,
-              child: Icon(
-                customer.isCompany ? Icons.business_outlined : Icons.person,
-                color: const Color(0xFF005095),
-              ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: const Color(0xFFE8F5E9),
+            child: Icon(
+              customer.isCompany ? Icons.business_outlined : Icons.person,
+              color: const Color(0xFF4CAF50),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    customer.isCompany ? 'Текущая компания' : 'Текущий клиент',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  customer.isCompany ? 'Текущая компания' : 'Текущий клиент',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                ),
+                Text(
+                  customer.fullName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
                   ),
-                  Text(
-                    customer.fullName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                  ),
+                ),
+                if (subtitle != null && subtitle.isNotEmpty)
                   Text(
                     subtitle,
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
-                ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
