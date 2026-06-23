@@ -9,6 +9,7 @@ import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
+import 'package:offlinesvet/checkout/checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -375,9 +376,14 @@ class _CartScreenState extends State<CartScreen> {
               itemsCount: itemsCount,
               totalPrice: _formatPrice(_totalPrice()),
               onContinue: () {
-                // TODO: переход на оформление заказа
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Оформление заказа — в разработке')),
+                final current = _currentCart;
+                if (current == null) return;
+                Navigator.of(context).pushNamed(
+                  '/checkout',
+                  arguments: CheckoutScreenArgs(
+                    cart: current,
+                    productsCache: Map.from(_productsCache),
+                  ),
                 );
               },
             ),
