@@ -3,6 +3,9 @@ import 'package:offlinesvet/catalog/product_list/view/product_list_screen.dart';
 import 'package:offlinesvet/catalog/product_item/view/product_item_screen.dart';
 import 'package:offlinesvet/cart/view/cart_screen.dart';
 import 'package:offlinesvet/checkout/checkout_screen.dart';
+import 'package:offlinesvet/stats/stats_screen.dart';
+import 'package:offlinesvet/scanner/scanner_screen.dart';
+import 'package:offlinesvet/profile/profile_screen.dart';
 import 'package:offlinesvet/pages/home.dart';
 import 'package:offlinesvet/pages/main_screen.dart';
 import 'package:offlinesvet/auth/login_screen.dart';
@@ -16,4 +19,7 @@ final routes = {
   '/products-item': (context) => ProductItemScreen(),
   '/cart': (context) => const CartScreen(),
   '/checkout': (context) => const CheckoutScreen(),
+  '/stats': (context) => const StatsScreen(),
+  '/scanner': (context) => const ScannerScreen(),
+  '/profile': (context) => const ProfileScreen(),
 };

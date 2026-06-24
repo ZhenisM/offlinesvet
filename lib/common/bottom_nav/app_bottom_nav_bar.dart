@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum AppBottomTab { catalog, cart }
+enum AppBottomTab { profile, scanner, mic, catalog, cart }
 
 class AppBottomNavBar extends StatelessWidget {
   const AppBottomNavBar({
@@ -10,20 +10,26 @@ class AppBottomNavBar extends StatelessWidget {
   });
 
   final AppBottomTab? currentTab;
-  final VoidCallback? onCartTap; // если передан — используется вместо стандартного перехода
+  final VoidCallback? onCartTap;
 
-  void _goToCatalog(BuildContext context) {
-    if (currentTab == AppBottomTab.catalog) return;
-    Navigator.of(context).pushReplacementNamed('/products-list');
-  }
-
-  void _goToCart(BuildContext context) {
-    if (onCartTap != null) {
-      onCartTap!();
-      return;
+  void _go(BuildContext context, AppBottomTab tab) {
+    if (currentTab == tab) return;
+    switch (tab) {
+      case AppBottomTab.profile:
+        Navigator.of(context).pushReplacementNamed('/profile');
+      case AppBottomTab.scanner:
+        Navigator.of(context).pushReplacementNamed('/scanner');
+      case AppBottomTab.mic:
+        break;
+      case AppBottomTab.catalog:
+        Navigator.of(context).pushReplacementNamed('/products-list');
+      case AppBottomTab.cart:
+        if (onCartTap != null) {
+          onCartTap!();
+        } else {
+          Navigator.of(context).pushReplacementNamed('/cart');
+        }
     }
-    if (currentTab == AppBottomTab.cart) return;
-    Navigator.of(context).pushReplacementNamed('/cart');
   }
 
   @override
@@ -46,19 +52,45 @@ class AppBottomNavBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 56,
+          height: 60,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
+              // 1. Профиль
+              _NavIcon(
+                icon: Icons.insert_chart_outlined,
+                selected: currentTab == AppBottomTab.profile,
+                onTap: () => _go(context, AppBottomTab.profile),
+              ),
+              // 2. Сканер — кастомная иконка с уголками
+              _ScannerNavIcon(
+                selected: currentTab == AppBottomTab.scanner,
+                onTap: () => _go(context, AppBottomTab.scanner),
+              ),
+              // 3. Микрофон — центральная зелёная кнопка
+              GestureDetector(
+                onTap: () {},
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4CAF50),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.mic, color: Colors.white, size: 24),
+                ),
+              ),
+              // 4. Каталог
               _NavIcon(
                 icon: Icons.storefront_outlined,
                 selected: currentTab == AppBottomTab.catalog,
-                onTap: () => _goToCatalog(context),
+                onTap: () => _go(context, AppBottomTab.catalog),
               ),
+              // 5. Корзина
               _NavIcon(
                 icon: Icons.shopping_cart_outlined,
                 selected: currentTab == AppBottomTab.cart,
-                onTap: () => _goToCart(context),
+                onTap: () => _go(context, AppBottomTab.cart),
               ),
             ],
           ),
@@ -68,13 +100,11 @@ class AppBottomNavBar extends StatelessWidget {
   }
 }
 
+// -------------------------------------------------------
+// Обычная иконка
+// -------------------------------------------------------
 class _NavIcon extends StatelessWidget {
-  const _NavIcon({
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
+  const _NavIcon({required this.icon, required this.selected, required this.onTap});
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -94,4 +124,87 @@ class _NavIcon extends StatelessWidget {
       ),
     );
   }
+}
+
+// -------------------------------------------------------
+// Кастомная иконка сканера QR с уголками
+// -------------------------------------------------------
+class _ScannerNavIcon extends StatelessWidget {
+  const _ScannerNavIcon({required this.selected, required this.onTap});
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? const Color(0xFF4CAF50) : Colors.grey.shade500;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: CustomPaint(
+          size: const Size(26, 26),
+          painter: _QrCornersPainter(color: color),
+        ),
+      ),
+    );
+  }
+}
+
+class _QrCornersPainter extends CustomPainter {
+  const _QrCornersPainter({required this.color});
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final w = size.width;
+    final h = size.height;
+    const r = 3.0;   // радиус скругления уголка
+    const L = 7.0;   // длина линии уголка
+
+    // Верхний левый
+    canvas.drawPath(Path()
+      ..moveTo(0, L)
+      ..lineTo(0, r)
+      ..arcToPoint(Offset(r, 0), radius: const Radius.circular(r))
+      ..lineTo(L, 0), paint);
+
+    // Верхний правый
+    canvas.drawPath(Path()
+      ..moveTo(w - L, 0)
+      ..lineTo(w - r, 0)
+      ..arcToPoint(Offset(w, r), radius: const Radius.circular(r))
+      ..lineTo(w, L), paint);
+
+    // Нижний правый
+    canvas.drawPath(Path()
+      ..moveTo(w, h - L)
+      ..lineTo(w, h - r)
+      ..arcToPoint(Offset(w - r, h), radius: const Radius.circular(r))
+      ..lineTo(w - L, h), paint);
+
+    // Нижний левый
+    canvas.drawPath(Path()
+      ..moveTo(L, h)
+      ..lineTo(r, h)
+      ..arcToPoint(Offset(0, h - r), radius: const Radius.circular(r))
+      ..lineTo(0, h - L), paint);
+
+    // Центральная горизонтальная линия сканирования
+    final midY = h / 2;
+    canvas.drawLine(
+      Offset(r + 2, midY),
+      Offset(w - r - 2, midY),
+      paint..strokeWidth = 1.8,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_QrCornersPainter old) => old.color != color;
 }

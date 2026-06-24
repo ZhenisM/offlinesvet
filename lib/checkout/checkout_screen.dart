@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -170,10 +171,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _dataLoading = false;
         if (data.deliveries.isNotEmpty) _deliveryId = data.deliveries.first.id;
       });
+      _autoSelectManager(); // автовыбор менеджера по имени из профиля
     } catch (e) {
       if (!mounted) return;
       setState(() { _dataError = e.toString(); _dataLoading = false; });
     }
+  }
+
+  /// Автоматически выбирает текущего менеджера в поле формы,
+  /// сопоставляя user_name из SharedPreferences со списком менеджеров из Bitrix.
+  Future<void> _autoSelectManager() async {
+    if (_manager != null) return; // уже выбран
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userName = prefs.getString('user_name') ?? '';
+      if (userName.isEmpty || !mounted) return;
+
+      // Ищем точное совпадение в списке менеджеров
+      final managers = _isLegal ? _od?.variantNames(_pManagerLegal) ?? []
+                                : _od?.variantNames(_pManager) ?? [];
+      final match = managers.firstWhere(
+        (m) => m == userName,
+        orElse: () => '',
+      );
+      if (match.isNotEmpty && mounted) {
+        setState(() => _manager = match);
+      }
+    } catch (_) {}
   }
 
   String _formatPhone(String raw) {
@@ -373,9 +397,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 4),
-            const Icon(Icons.qr_code_scanner),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
           ],
         ),
       ),

@@ -52,10 +52,7 @@ class _SearchCustomerScreenState extends State<SearchCustomerScreen> {
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(right: 12, left: 4),
-            child: Icon(Icons.qr_code_scanner, color: Colors.white, size: 22),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(

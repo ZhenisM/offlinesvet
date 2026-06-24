@@ -57,6 +57,26 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
     }
   }
 
+  String _formatPriceName(String name) {
+    const map = {
+      'rozn': 'Розничная',
+      'opt': 'Оптовая',
+      'vip': 'VIP',
+      'dealer': 'Дилерская',
+    };
+    return map[name.toLowerCase()] ?? name;
+  }
+
+  String _fmtPrice(double price) {
+    final s = price.toStringAsFixed(0).split('');
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()} ₸';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (product == null) {
@@ -92,6 +112,7 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                 icon: const Icon(Icons.shopping_cart_outlined),
                 label: const Text('В корзину'),
                 style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF4CAF50),
                   minimumSize: const Size.fromHeight(52),
                 ),
               ),
@@ -159,10 +180,10 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(price.typeName,
+                    Text(_formatPriceName(price.typeName),
                         style: const TextStyle(color: Colors.grey)),
                     Text(
-                      '${price.price.toStringAsFixed(0)} ${price.currency}',
+                      _fmtPrice(price.price),
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
