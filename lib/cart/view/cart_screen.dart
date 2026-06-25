@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -239,14 +240,29 @@ class _CartScreenState extends State<CartScreen> {
     final current = _currentCart;
     if (current == null) return;
 
-    final updated = current.items.where((i) => i != item).toList();
+    // Ищем по значениям полей, а не по ссылке на объект
+    final items = List<CartItem>.from(current.items);
+    final idx = items.indexWhere((i) =>
+        i.productId == item.productId &&
+        i.selectRoom == item.selectRoom &&
+        i.rasprodazha == item.rasprodazha);
+
+    debugPrint('_removeItem: productId=${item.productId} idx=$idx total=${items.length}');
+
+    if (idx < 0) {
+      setState(() => _error = 'Товар не найден в корзине');
+      return;
+    }
+    items.removeAt(idx);
+
     try {
       await _cartApiService.updateCartItems(
         basketId: current.id,
-        items: updated,
+        items: items,
       );
       await _loadCarts();
     } catch (e) {
+      debugPrint('_removeItem error: $e');
       setState(() => _error = 'Не удалось удалить товар');
     }
   }
@@ -262,7 +278,9 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     final updated = current.items.map((i) {
-      if (i == item) {
+      if (i.productId == item.productId &&
+              i.selectRoom == item.selectRoom &&
+              i.rasprodazha == item.rasprodazha) {
         return CartItem(
           productId: i.productId,
           quantity: newQty,
