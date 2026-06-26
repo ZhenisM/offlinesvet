@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart' show NoInternetException;
 import 'package:offlinesvet/cart/cart_api_service.dart';
+import 'package:offlinesvet/cart/cart_api_service_offline.dart';
 import 'package:offlinesvet/cart/models/cart_model.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
@@ -20,7 +21,7 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  final _cartApiService = CartApiService(dio: Dio());
+  final _cartApiService = CartApiServiceOffline(dio: Dio());
   final _productsRepository = ProductsRepository(dio: Dio());
 
   List<Cart>? _carts;

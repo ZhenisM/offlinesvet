@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/sync/sync_status_notifier.dart';
 
 enum AppBottomTab { profile, scanner, mic, catalog, cart }
 
@@ -10,9 +11,9 @@ class AppBottomNavBar extends StatelessWidget {
   });
 
   final AppBottomTab? currentTab;
-  final VoidCallback? onCartTap;
+  final VoidCallback? onCartTap; // если передан — используется вместо стандартного перехода
 
-  void _go(BuildContext context, AppBottomTab tab) {
+  void _goTo(BuildContext context, AppBottomTab tab) {
     if (currentTab == tab) return;
     switch (tab) {
       case AppBottomTab.profile:
@@ -20,7 +21,7 @@ class AppBottomNavBar extends StatelessWidget {
       case AppBottomTab.scanner:
         Navigator.of(context).pushReplacementNamed('/scanner');
       case AppBottomTab.mic:
-        break;
+        break; // заглушка
       case AppBottomTab.catalog:
         Navigator.of(context).pushReplacementNamed('/products-list');
       case AppBottomTab.cart:
@@ -31,6 +32,9 @@ class AppBottomNavBar extends StatelessWidget {
         }
     }
   }
+
+  void _goToCatalog(BuildContext context) => _goTo(context, AppBottomTab.catalog);
+  void _goToCart(BuildContext context) => _goTo(context, AppBottomTab.cart);
 
   @override
   Widget build(BuildContext context) {
@@ -60,19 +64,18 @@ class AppBottomNavBar extends StatelessWidget {
               _NavIcon(
                 icon: Icons.insert_chart_outlined,
                 selected: currentTab == AppBottomTab.profile,
-                onTap: () => _go(context, AppBottomTab.profile),
+                onTap: () => _goTo(context, AppBottomTab.profile),
               ),
-              // 2. Сканер — кастомная иконка с уголками
+              // 2. Сканер
               _ScannerNavIcon(
                 selected: currentTab == AppBottomTab.scanner,
-                onTap: () => _go(context, AppBottomTab.scanner),
+                onTap: () => _goTo(context, AppBottomTab.scanner),
               ),
               // 3. Микрофон — центральная зелёная кнопка
               GestureDetector(
                 onTap: () {},
                 child: Container(
-                  width: 48,
-                  height: 48,
+                  width: 48, height: 48,
                   decoration: const BoxDecoration(
                     color: Color(0xFF4CAF50),
                     shape: BoxShape.circle,
@@ -84,13 +87,31 @@ class AppBottomNavBar extends StatelessWidget {
               _NavIcon(
                 icon: Icons.storefront_outlined,
                 selected: currentTab == AppBottomTab.catalog,
-                onTap: () => _go(context, AppBottomTab.catalog),
+                onTap: () => _goToCatalog(context),
               ),
-              // 5. Корзина
-              _NavIcon(
-                icon: Icons.shopping_cart_outlined,
-                selected: currentTab == AppBottomTab.cart,
-                onTap: () => _go(context, AppBottomTab.cart),
+              ValueListenableBuilder<int>(
+                valueListenable: SyncStatusNotifier.instance,
+                builder: (_, count, __) => Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _NavIcon(
+                      icon: Icons.shopping_cart_outlined,
+                      selected: currentTab == AppBottomTab.cart,
+                      onTap: () => _goToCart(context),
+                    ),
+                    if (count > 0)
+                      Positioned(
+                        top: 6, right: 6,
+                        child: Container(
+                          width: 10, height: 10,
+                          decoration: const BoxDecoration(
+                            color: Colors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -100,11 +121,13 @@ class AppBottomNavBar extends StatelessWidget {
   }
 }
 
-// -------------------------------------------------------
-// Обычная иконка
-// -------------------------------------------------------
 class _NavIcon extends StatelessWidget {
-  const _NavIcon({required this.icon, required this.selected, required this.onTap});
+  const _NavIcon({
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
   final IconData icon;
   final bool selected;
   final VoidCallback onTap;
@@ -125,6 +148,7 @@ class _NavIcon extends StatelessWidget {
     );
   }
 }
+
 
 // -------------------------------------------------------
 // Кастомная иконка сканера QR с уголками
@@ -165,44 +189,31 @@ class _QrCornersPainter extends CustomPainter {
 
     final w = size.width;
     final h = size.height;
-    const r = 3.0;   // радиус скругления уголка
-    const L = 7.0;   // длина линии уголка
+    const r = 3.0;
+    const L = 7.0;
 
-    // Верхний левый
     canvas.drawPath(Path()
-      ..moveTo(0, L)
-      ..lineTo(0, r)
+      ..moveTo(0, L)..lineTo(0, r)
       ..arcToPoint(Offset(r, 0), radius: const Radius.circular(r))
       ..lineTo(L, 0), paint);
 
-    // Верхний правый
     canvas.drawPath(Path()
-      ..moveTo(w - L, 0)
-      ..lineTo(w - r, 0)
+      ..moveTo(w - L, 0)..lineTo(w - r, 0)
       ..arcToPoint(Offset(w, r), radius: const Radius.circular(r))
       ..lineTo(w, L), paint);
 
-    // Нижний правый
     canvas.drawPath(Path()
-      ..moveTo(w, h - L)
-      ..lineTo(w, h - r)
+      ..moveTo(w, h - L)..lineTo(w, h - r)
       ..arcToPoint(Offset(w - r, h), radius: const Radius.circular(r))
       ..lineTo(w - L, h), paint);
 
-    // Нижний левый
     canvas.drawPath(Path()
-      ..moveTo(L, h)
-      ..lineTo(r, h)
+      ..moveTo(L, h)..lineTo(r, h)
       ..arcToPoint(Offset(0, h - r), radius: const Radius.circular(r))
       ..lineTo(0, h - L), paint);
 
-    // Центральная горизонтальная линия сканирования
-    final midY = h / 2;
-    canvas.drawLine(
-      Offset(r + 2, midY),
-      Offset(w - r - 2, midY),
-      paint..strokeWidth = 1.8,
-    );
+    canvas.drawLine(Offset(r + 2, h / 2), Offset(w - r - 2, h / 2),
+        paint..strokeWidth = 1.8);
   }
 
   @override

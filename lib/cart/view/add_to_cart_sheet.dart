@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/cart/cart_api_service.dart';
+import 'package:offlinesvet/cart/cart_api_service_offline.dart';
 import 'package:offlinesvet/cart/models/cart_model.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
@@ -59,7 +60,7 @@ class _AddToCartSheet extends StatefulWidget {
 }
 
 class _AddToCartSheetState extends State<_AddToCartSheet> {
-  final _cartApiService = CartApiService(dio: Dio());
+  final _cartApiService = CartApiServiceOffline(dio: Dio());
 
   String _selectedRoom = _kRooms.first;
   String _selectedSale = _kSaleOptions.first;

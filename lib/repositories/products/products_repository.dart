@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -57,10 +59,61 @@ class ProductsRepository {
   }
 
   // -------------------------------------------------------
-  // Товары по списку ID (для отображения в мультикорзине)
   // -------------------------------------------------------
+  // Товары по списку ID (для отображения в мультикорзине)
+  // Кэшируются в SharedPreferences по productId — работает offline
+  // -------------------------------------------------------
+  static const _cacheKey = 'products_by_id_cache';
+
+  Future<void> _cacheRawProducts(List<dynamic> rawProducts) async {
+    if (rawProducts.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existing = prefs.getString(_cacheKey);
+      final Map<String, dynamic> cache = existing != null
+          ? jsonDecode(existing) as Map<String, dynamic>
+          : {};
+      for (final raw in rawProducts) {
+        final map = raw as Map<String, dynamic>;
+        final id = map['id']?.toString();
+        if (id != null) cache[id] = jsonEncode(map);
+      }
+      await prefs.setString(_cacheKey, jsonEncode(cache));
+    } catch (e) {
+      debugPrint('_cacheRawProducts: ошибка: $e');
+    }
+  }
+
+  Future<List<Product>> _loadFromCache(List<String> ids) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existing = prefs.getString(_cacheKey);
+      if (existing == null) return [];
+      final cache = jsonDecode(existing) as Map<String, dynamic>;
+      final result = <Product>[];
+      for (final id in ids) {
+        if (cache.containsKey(id)) {
+          final map = jsonDecode(cache[id] as String) as Map<String, dynamic>;
+          result.add(Product.fromJson(map));
+        }
+      }
+      debugPrint('_loadFromCache: найдено ${result.length}/${ids.length} товаров');
+      return result;
+    } catch (e) {
+      debugPrint('_loadFromCache: ошибка: $e');
+      return [];
+    }
+  }
+
   Future<List<Product>> getProductsByIds(List<String> ids) async {
     if (ids.isEmpty) return [];
+
+    final online = await _hasInternet();
+
+    if (!online) {
+      debugPrint('getProductsByIds: offline — читаем из кэша');
+      return _loadFromCache(ids);
+    }
 
     try {
       final response = await dio.get(
@@ -69,32 +122,26 @@ class ProductsRepository {
         options: Options(responseType: ResponseType.plain),
       );
 
-      // Явно декодируем — не доверяем автопарсингу Dio,
-      // сервер может вернуть text/html Content-Type даже при JSON-теле.
       final raw = response.data as String;
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       final productsJson = decoded['products'] as List<dynamic>;
 
       debugPrint('getProductsByIds: получили ${productsJson.length} товаров');
 
-      return productsJson
+      final products = productsJson
           .map((e) => Product.fromJson(e as Map<String, dynamic>))
           .toList();
+
+      // Кэшируем для offline (не ждём)
+      _cacheRawProducts(productsJson);
+
+      return products;
     } catch (e) {
-      debugPrint('getProductsByIds: ошибка ($e), ищем в кэше');
-      try {
-        final allCached = await Future.wait(
-          ids.map((id) => LocalDb.loadProductsBySection(id)),
-        );
-        return allCached
-            .expand((list) => list)
-            .where((p) => ids.contains(p.id))
-            .toList();
-      } catch (_) {
-        return [];
-      }
+      debugPrint('getProductsByIds: ошибка ($e), читаем из кэша');
+      return _loadFromCache(ids);
     }
   }
+
 
   // -------------------------------------------------------
   // собрать товары из всех дочерних секций
