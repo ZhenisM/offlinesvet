@@ -4,6 +4,7 @@ import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
+import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/cart/view/add_to_cart_sheet.dart';
 
@@ -90,6 +91,7 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
         title: const Text('Товар'),
         centerTitle: true,
         actions: [
+          const CatalogSearchBar(),
           IconButton(
             icon: const Icon(Icons.menu_outlined),
             onPressed: _menuOpen,

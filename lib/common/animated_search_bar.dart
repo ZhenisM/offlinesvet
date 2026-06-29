@@ -1,9 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/catalog/search/search_screen.dart';
 
-/// Компактная строка поиска в AppBar:
-/// - В свёрнутом виде: иконка лупы + текст "Поиск" (120px)
-/// - При нажатии: плавно расширяется на весь экран кроме стрелки назад
-/// - При потере фокуса или крестике — сворачивается
+/// Компактная строка поиска в AppBar каталога.
+/// В свёрнутом виде — маленькая иконка. При нажатии открывает SearchScreen.
+class CatalogSearchBar extends StatelessWidget {
+  const CatalogSearchBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SearchScreen()),
+      ),
+      child: Container(
+        width: 140,
+        height: 36,
+        margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, color: Colors.white70, size: 18),
+            SizedBox(width: 4),
+            Text('Поиск', style: TextStyle(color: Colors.white70, fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Оригинальный AnimatedSearchBar — анимированное поле ввода в AppBar.
+/// Используется в client_cabinet_screen и client_orders_screen.
 class AnimatedSearchBar extends StatefulWidget {
   const AnimatedSearchBar({super.key, this.onChanged});
   final ValueChanged<String>? onChanged;
@@ -60,7 +91,6 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar>
 
   @override
   Widget build(BuildContext context) {
-    // Максимальная ширина = весь экран минус leading (56) минус небольшой отступ
     final maxW = MediaQuery.of(context).size.width - 60;
     const minW = 120.0;
 
@@ -90,12 +120,10 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar>
                         child: TextField(
                           controller: _ctrl,
                           focusNode: _focus,
-                          style: const TextStyle(
-                              color: Colors.black87, fontSize: 14),
+                          style: const TextStyle(color: Colors.black87, fontSize: 14),
                           decoration: const InputDecoration(
                             hintText: 'Поиск',
-                            hintStyle: TextStyle(
-                                color: Colors.black38, fontSize: 14),
+                            hintStyle: TextStyle(color: Colors.black38, fontSize: 14),
                             border: InputBorder.none,
                             isDense: true,
                             contentPadding: EdgeInsets.zero,
@@ -107,8 +135,7 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar>
                         onTap: _collapse,
                         child: const Padding(
                           padding: EdgeInsets.all(8),
-                          child: Icon(Icons.close,
-                              color: Colors.grey, size: 16),
+                          child: Icon(Icons.close, color: Colors.grey, size: 16),
                         ),
                       ),
                     ])
@@ -117,9 +144,7 @@ class _AnimatedSearchBarState extends State<AnimatedSearchBar>
                       children: [
                         Icon(Icons.search, color: Colors.white70, size: 18),
                         SizedBox(width: 4),
-                        Text('Поиск',
-                            style: TextStyle(
-                                color: Colors.white70, fontSize: 13)),
+                        Text('Поиск', style: TextStyle(color: Colors.white70, fontSize: 13)),
                       ],
                     ),
             ),

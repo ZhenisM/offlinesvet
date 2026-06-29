@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
+import 'package:offlinesvet/catalog/filter/filter_screen.dart';
+import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
@@ -32,10 +37,19 @@ class _CategoryScreenState extends State<CategoryScreen> {
   int _page = 1;
   static const int _limit = 50;
 
+  // Фильтры
+  List<FilterDef> _filterDefs = [];
+  RangeValues _priceRange = const RangeValues(0, 100000000);
+  ActiveFilters _activeFilters = const ActiveFilters();
+  bool _filtersLoaded = false;
+  final _filterDio = Dio();
+  static const _baseUrl = 'https://prons.kz/ajax/offlinesvet';
+
   @override
   void initState() {
     super.initState();
     _loadProducts();
+    _loadFilters();
     _scrollController.addListener(_onScroll);
   }
 
@@ -103,6 +117,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
         title: Text(widget.section.name),
         centerTitle: true,
         actions: [
+          const CatalogSearchBar(),
           IconButton(
             icon: const Icon(Icons.menu_outlined),
             onPressed: _menuOpen,
@@ -112,15 +127,79 @@ class _CategoryScreenState extends State<CategoryScreen> {
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
-          // Подкатегории (если есть)
+          // Плашка фильтров
+          SliverToBoxAdapter(
+            child: Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Row(children: [
+                // Кнопка Фильтры
+                GestureDetector(
+                  onTap: _filtersLoaded ? _openFilter : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: !_filtersLoaded
+                          ? Colors.grey.shade200
+                          : _activeFilters.isEmpty
+                              ? const Color(0xFFF3F2F7)
+                              : const Color(0xFF4CAF50),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (!_filtersLoaded)
+                        const SizedBox(
+                          width: 14, height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.grey,
+                          ),
+                        )
+                      else
+                        Icon(Icons.tune,
+                          size: 16,
+                          color: _activeFilters.isEmpty ? Colors.black87 : Colors.white),
+                      const SizedBox(width: 6),
+                      Text(
+                        !_filtersLoaded
+                            ? 'Загрузка...'
+                            : _activeFilters.isEmpty
+                                ? 'Фильтры'
+                                : 'Фильтры (${_activeFilters.activeCount})',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: !_filtersLoaded
+                              ? Colors.grey
+                              : _activeFilters.isEmpty ? Colors.black87 : Colors.white,
+                        ),
+                      ),
+                    ]),
+                  ),
+                ),
+                const Spacer(),
+                // Избранное (заглушка)
+                IconButton(
+                  icon: const Icon(Icons.favorite_border, size: 22),
+                  color: Colors.black54,
+                  onPressed: () {},
+                ),
+                // Сортировка (заглушка)
+                IconButton(
+                  icon: const Icon(Icons.sort, size: 22),
+                  color: Colors.black54,
+                  onPressed: () {},
+                ),
+              ]),
+            ),
+          ),
+          // Подкатегории
           if (widget.section.children.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'Подкатегории',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                child: Text('Подкатегории',
+                    style: Theme.of(context).textTheme.titleMedium),
               ),
             ),
             SliverList(
@@ -153,7 +232,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Text(
-                '${_products.length}${_hasMore ? '+' : ''} товар${_productCountSuffix(_products.length)}',
+                '${_products.length}${_hasMore ? '+' : ''} товар${_suffix(_products.length)}',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Colors.grey.shade600,
                 ),
@@ -161,7 +240,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
             ),
           ),
 
-          // Сетка товаров — адаптивная: 2 на мобильном, 3 на планшете
+          // Сетка товаров
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             sliver: SliverGrid(
@@ -178,16 +257,102 @@ class _CategoryScreenState extends State<CategoryScreen> {
             ),
           ),
 
-          // Лоадер / ошибка / конец списка
-          SliverToBoxAdapter(
-            child: _buildFooter(),
-          ),
-
+          // Лоадер / ошибка / конец
+          SliverToBoxAdapter(child: _buildFooter()),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
       bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
     );
+  }
+
+  Future<void> _loadFilters() async {
+    try {
+      final response = await _filterDio.get(
+        '$_baseUrl/get_filters.php',
+        queryParameters: {'section_id': widget.section.id},
+        options: Options(responseType: ResponseType.plain),
+      );
+      final json = jsonDecode(response.data as String) as Map<String, dynamic>;
+      final price = json['price'] as Map<String, dynamic>?;
+      final filtersJson = json['filters'] as List<dynamic>? ?? [];
+      if (!mounted) return;
+      setState(() {
+        _filterDefs = filtersJson
+            .map((e) => FilterDef.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (price != null) {
+          _priceRange = RangeValues(
+            (price['min'] as num).toDouble(),
+            (price['max'] as num).toDouble(),
+          );
+        }
+        _filtersLoaded = true;
+      });
+    } catch (e, st) {
+      debugPrint('_loadFilters ERROR: $e');
+      debugPrint('$st');
+      if (mounted) setState(() => _filtersLoaded = true);
+    }
+  }
+
+  Future<void> _openFilter() async {
+    final result = await Navigator.of(context).push<ActiveFilters>(
+      MaterialPageRoute(
+        builder: (_) => FilterScreen(
+          filters: _filterDefs,
+          priceRange: _priceRange,
+          initial: _activeFilters,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _activeFilters = result;
+        _products.clear();
+        _hasMore = true;
+        _page = 1;
+      });
+      if (_activeFilters.isEmpty) {
+        _loadProducts();
+      } else {
+        _applyFilters();
+      }
+    }
+  }
+
+  Future<void> _applyFilters() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final payload = {
+        'section_id': int.tryParse(widget.section.id) ?? 0,
+        'page': 1,
+        'limit': 50,
+        'filters': _activeFilters.toRequestPayload(),
+      };
+      debugPrint('FILTER PAYLOAD: ' + jsonEncode(payload));
+      final response = await _filterDio.post(
+        '$_baseUrl/get_products_filtered.php',
+        data: jsonEncode(payload),
+        options: Options(contentType: 'application/json', responseType: ResponseType.plain),
+      );
+      final json = jsonDecode(response.data as String) as Map<String, dynamic>;
+      final rawList = json['products'];
+      final list = (rawList is List ? rawList : <dynamic>[])
+          .map((e) => Product.fromJson(e as Map<String, dynamic>))
+          .toList();
+      final meta = json['meta'] as Map<String, dynamic>? ?? {};
+      if (!mounted) return;
+      setState(() {
+        _products
+          ..clear()
+          ..addAll(list);
+        _hasMore = meta['has_more'] == true;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+    }
   }
 
   Widget _buildFooter() {
@@ -200,36 +365,30 @@ class _CategoryScreenState extends State<CategoryScreen> {
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          children: [
-            Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
-            TextButton(onPressed: _loadProducts, child: const Text('Повторить')),
-          ],
-        ),
+        child: Column(children: [
+          Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13)),
+          TextButton(onPressed: _loadProducts, child: const Text('Повторить')),
+        ]),
       );
     }
     if (!_hasMore && _products.isNotEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
-          child: Text(
-            'Все товары загружены: ${_products.length}',
-            style: const TextStyle(color: Colors.grey, fontSize: 13),
-          ),
+          child: Text('Все товары загружены: ${_products.length}',
+            style: const TextStyle(color: Colors.grey, fontSize: 13)),
         ),
       );
     }
     return const SizedBox.shrink();
   }
 
-  String _productCountSuffix(int count) {
-    final last = count % 10;
-    final lastTwo = count % 100;
-    if (lastTwo >= 11 && lastTwo <= 14) return 'ов';
-    if (last == 1) return '';
-    if (last >= 2 && last <= 4) return 'а';
+  String _suffix(int n) {
+    final l = n % 10;
+    final l2 = n % 100;
+    if (l2 >= 11 && l2 <= 14) return 'ов';
+    if (l == 1) return '';
+    if (l >= 2 && l <= 4) return 'а';
     return 'ов';
   }
-
 }
-

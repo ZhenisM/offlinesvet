@@ -10,6 +10,7 @@ import 'package:offlinesvet/pages/home.dart';
 import 'package:offlinesvet/pages/main_screen.dart';
 import 'package:offlinesvet/auth/login_screen.dart';
 import 'package:offlinesvet/auth/splash_screen.dart';
+import 'package:offlinesvet/catalog/search/search_screen.dart';
 
 final routes = {
   '/': (context) => SplashScreen(),
@@ -22,4 +23,5 @@ final routes = {
   '/stats': (context) => const StatsScreen(),
   '/scanner': (context) => const ScannerScreen(),
   '/profile': (context) => const ProfileScreen(),
+  '/search': (context) => const SearchScreen(),
 };

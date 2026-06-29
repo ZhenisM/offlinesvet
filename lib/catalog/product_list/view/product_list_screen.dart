@@ -4,6 +4,7 @@ import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/catalog/category/view/category_screen.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
+import 'package:offlinesvet/common/animated_search_bar.dart';
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -57,6 +58,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
         title: const Text('Каталог'),
         centerTitle: true,
         actions: [
+          const CatalogSearchBar(),
           IconButton(
             icon: const Icon(Icons.menu_outlined),
             onPressed: _menuOpen,
