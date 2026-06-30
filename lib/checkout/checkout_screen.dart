@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:offlinesvet/checkout/order_success_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/cart/models/cart_model.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
@@ -171,33 +171,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _dataLoading = false;
         if (data.deliveries.isNotEmpty) _deliveryId = data.deliveries.first.id;
       });
-      _autoSelectManager(); // автовыбор менеджера по имени из профиля
     } catch (e) {
       if (!mounted) return;
       setState(() { _dataError = e.toString(); _dataLoading = false; });
     }
-  }
-
-  /// Автоматически выбирает текущего менеджера в поле формы,
-  /// сопоставляя user_name из SharedPreferences со списком менеджеров из Bitrix.
-  Future<void> _autoSelectManager() async {
-    if (_manager != null) return; // уже выбран
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userName = prefs.getString('user_name') ?? '';
-      if (userName.isEmpty || !mounted) return;
-
-      // Ищем точное совпадение в списке менеджеров
-      final managers = _isLegal ? _od?.variantNames(_pManagerLegal) ?? []
-                                : _od?.variantNames(_pManager) ?? [];
-      final match = managers.firstWhere(
-        (m) => m == userName,
-        orElse: () => '',
-      );
-      if (match.isNotEmpty && mounted) {
-        setState(() => _manager = match);
-      }
-    } catch (_) {}
   }
 
   String _formatPhone(String raw) {
@@ -307,23 +284,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (result['success'] == true) {
         final orderId = result['order_id'];
         if (!mounted) return;
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Заказ оформлен!'),
-            content: Text('Заказ №$orderId успешно создан.'),
-            actions: [
-              FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4CAF50)),
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  Navigator.of(context).pushNamedAndRemoveUntil('/products-list', (_) => false);
-                },
-                child: const Text('В каталог'),
-              ),
-            ],
+        // Сразу переходим на экран с информацией о заказе и кнопкой "КП-Клиент"
+        // вместо всплывающего окна
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => OrderSuccessScreen(
+              orderId: int.parse(orderId.toString()),
+              clientName: _cart.clientInfo?['NAME']?.toString()
+                  ?? _cart.title,
+            ),
           ),
+          (_) => false,
         );
       } else {
         setState(() => _error = result['error'] ?? 'Неизвестная ошибка');
