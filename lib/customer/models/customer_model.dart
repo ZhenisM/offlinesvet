@@ -227,11 +227,15 @@ class CompanySearchResult {
   final String name;
   final String fullName;
   final String bin;
+  final String phone;
+  final String email;
 
   const CompanySearchResult({
     required this.companyId,
     required this.name,
     this.fullName = '',
     required this.bin,
+    this.phone = '',
+    this.email = '',
   });
 }

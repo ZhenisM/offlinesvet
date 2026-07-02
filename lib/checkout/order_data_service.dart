@@ -77,11 +77,63 @@ class OrderData {
       deliveryExtras[deliveryId] ?? [];
 }
 
+/// Скрытые свойства заказа менеджера из HL-блока 45.
+/// fiz — физ. лицо (обычно), invest — физ. + купон ≥25%, yur — юр. лицо.
+class ManagerProps {
+  /// Карта propId → value для каждого режима
+  final Map<String, String> fiz;
+  final Map<String, String> invest;
+  final Map<String, String> yur;
+
+  const ManagerProps({
+    required this.fiz,
+    required this.invest,
+    required this.yur,
+  });
+
+  static ManagerProps empty() =>
+      const ManagerProps(fiz: {}, invest: {}, yur: {});
+
+  factory ManagerProps.fromJson(Map<String, dynamic> j) => ManagerProps(
+        fiz:    _parseMap(j['fiz']),
+        invest: _parseMap(j['invest']),
+        yur:    _parseMap(j['yur']),
+      );
+
+  static Map<String, String> _parseMap(dynamic raw) {
+    if (raw == null) return {};
+    return (raw as Map<String, dynamic>)
+        .map((k, v) => MapEntry(k, v?.toString() ?? ''));
+  }
+
+  /// Возвращает нужный набор в зависимости от типа
+  Map<String, String> forMode({required bool isLegal, required bool isInvest}) {
+    if (isLegal) return yur;
+    if (isInvest) return invest;
+    return fiz;
+  }
+}
+
 class OrderDataService {
   static const _baseUrl = 'https://prons.kz/ajax/offlinesvet';
   final Dio _dio;
 
   OrderDataService({Dio? dio}) : _dio = dio ?? Dio();
+
+  Future<ManagerProps> loadManagerProps(int managerId) async {
+    try {
+      final response = await _dio.get(
+        '$_baseUrl/get_manager_1c_props.php',
+        queryParameters: {'manager_id': managerId},
+        options: Options(responseType: ResponseType.plain),
+      );
+      final json = jsonDecode(response.data as String) as Map<String, dynamic>;
+      if (json['success'] == true) {
+        return ManagerProps.fromJson(json);
+      }
+    } catch (_) {}
+    return ManagerProps.empty();
+  }
 
   Future<OrderData> load() async {
     final response = await _dio.get(

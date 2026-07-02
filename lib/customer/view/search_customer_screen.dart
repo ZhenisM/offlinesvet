@@ -318,6 +318,9 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
       isCompany: true,
       leadId: null,
       name: match.name,
+      lastName: match.fullName, // полное наименование — в lastName для доступа через fullName
+      phone: match.phone,
+      email: match.email,
       bin: match.bin,
       type: CustomerType.client,
       selectedAt: DateTime.now(),
@@ -410,7 +413,11 @@ class _CompanyResultCard extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _InfoRow(label: 'Компания', value: result.name),
+        if (result.fullName.isNotEmpty && result.fullName != result.name)
+          _InfoRow(label: 'Полное наименование', value: result.fullName),
         if (result.bin.isNotEmpty) _InfoRow(label: 'БИН/ИИН', value: result.bin),
+        if (result.phone.isNotEmpty) _InfoRow(label: 'Телефон', value: result.phone),
+        if (result.email.isNotEmpty) _InfoRow(label: 'Email', value: result.email),
         const SizedBox(height: 4),
         _GreenButton(label: 'Выбрать', loading: loading, onTap: onSelect),
         const SizedBox(height: 4),

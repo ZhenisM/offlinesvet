@@ -106,6 +106,26 @@ const _pManager       = 29;
 const _pCompany       = 146;
 const _pContactName   = 156;
 const _pPhoneLegal    = 186;
+const _pCompanyFull   = 158; // Полное наименование компании
+const _pCompanyEmail  = 187; // Email компании
+const _pCompanyBin    = 155; // БИН/ИИН
+
+// Скрытые поля физ. лица (из HL-блока 45)
+const _pH1cOrgFiz  = 144; // Организация (физ)
+const _pH1cDepFiz  = 145; // Подразделение (физ)
+const _pH1cAuthFiz = 150; // Автор (физ)
+const _pH1cStoreFiz= 159; // Склад (физ)
+const _pH1cShopFiz = 217; // Магазин (физ)
+const _pH1cBaseFiz = 151; // База 1С (физ)
+
+// Скрытые поля юр. лица (из HL-блока 45)
+const _pH1cOrgYur  = 147; // Организация (юр)
+const _pH1cDepYur  = 148; // Подразделение (юр)
+const _pH1cAuthYur = 152; // Автор (юр)
+const _pH1cStoreYur= 160; // Склад (юр)
+const _pH1cShopYur = 218; // Магазин (юр)
+const _pH1cBaseYur = 153; // База 1С (юр)
+
 const _pProjectLegal  = 260;
 const _pCategoryLegal = 222;
 const _pStatusLegal   = 161;
@@ -142,12 +162,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final Set<int> _selectedExtras = {};
 
   final _extraServiceCtrl = TextEditingController();
-  final _nameCtrl         = TextEditingController();
-  final _phoneCtrl        = TextEditingController();
-  final _projectCtrl      = TextEditingController();
-  final _areaCtrl         = TextEditingController();
-  final _companyCtrl      = TextEditingController();
-  final _couponCtrl       = TextEditingController();
+  final _nameCtrl          = TextEditingController(); // ФИО контакта (физ) / ФИО контактного лица (юр)
+  final _phoneCtrl         = TextEditingController(); // Телефон контакта (физ) / Телефон компании (юр)
+  final _projectCtrl       = TextEditingController();
+  final _areaCtrl          = TextEditingController();
+  final _companyCtrl       = TextEditingController(); // Наименование компании (юр)
+  final _companyFullCtrl   = TextEditingController(); // Полное наименование компании (юр)
+  final _companyEmailCtrl  = TextEditingController(); // Email компании (юр)
+  final _companyBinCtrl    = TextEditingController(); // БИН/ИИН (юр)
+  final _couponCtrl        = TextEditingController();
 
   String? _clientType   = 'Клиент';
   String  _orderStatus  = 'order-status-kp';
@@ -160,6 +183,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _loading     = false;
   bool _initialized = false;
   String? _error;
+
+  // Список купонов-INVEST загружается с сервера (coupon_rules.php → invest_coupons)
+  List<String> _investCoupons = [];
+
+  // Данные из HL-блока 45 (скрытые поля)
+  ManagerProps _managerProps = ManagerProps.empty();
+
+  // Контроллеры скрытых полей
+  final _h1cOrgCtrl   = TextEditingController();
+  final _h1cDepCtrl   = TextEditingController();
+  final _h1cAuthCtrl  = TextEditingController();
+  final _h1cStoreCtrl = TextEditingController();
+  final _h1cShopCtrl  = TextEditingController();
+  String _h1cBase1c   = ''; // base-1c-aura / base-1c-invest
 
   // ── Купоны ──────────────────────────────────────────
   List<CouponGroup> _couponGroups = [];
@@ -210,14 +247,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _productsCache = args.productsCache;
       final client = _cart.clientInfo;
       if (client != null) {
-        final name  = client['NAME']?.toString()  ?? '';
-        final phone = client['PHONE']?.toString() ?? '';
-        if (name.isNotEmpty)  _nameCtrl.text  = name;
-        if (phone.isNotEmpty) _phoneCtrl.text = _formatPhone(phone);
+        final entity = client['ENTITY']?.toString() ?? '';
+
+        if (entity == 'COMPANY') {
+          // Компания — автоматически юр. лицо
+          _isLegal = true;
+
+          // Наименование компании (краткое) — TITLE в clientInfo
+          final title = client['TITLE']?.toString() ?? '';
+          if (title.isNotEmpty) _companyCtrl.text = title;
+
+          // БИН/ИИН — BIN в clientInfo
+          final bin = client['BIN']?.toString() ?? '';
+          if (bin.isNotEmpty) _companyBinCtrl.text = bin;
+        } else {
+          // Контакт — физ. лицо
+          final name  = client['NAME']?.toString()  ?? '';
+          final phone = client['PHONE']?.toString() ?? '';
+          if (name.isNotEmpty)  _nameCtrl.text  = name;
+          if (phone.isNotEmpty) _phoneCtrl.text = _formatPhone(phone);
+        }
       }
     }
     _loadOrderData();
     _loadCouponGroups();
+    // Дозаполняем поля из Customer (fullName, phone, email) — читаем из хранилища
+    _prefillFromCustomer();
   }
 
   Future<void> _loadOrderData() async {
@@ -229,13 +284,74 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _dataLoading = false;
         if (data.deliveries.isNotEmpty) _deliveryId = data.deliveries.first.id;
       });
+      // Загружаем скрытые поля из HL-45 по manager_id
+      final managerId = await CustomerStorage.currentManagerId();
+      if (managerId != null) {
+        final props = await _orderDataService.loadManagerProps(managerId);
+        if (!mounted) return;
+        setState(() { _managerProps = props; });
+        _applyManagerProps(); // применяем сразу
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() { _dataError = e.toString(); _dataLoading = false; });
     }
   }
 
+  /// Применяет скрытые поля из HL-45 в зависимости от типа (юр/физ/invest)
+  void _applyManagerProps() {
+    final isInvest = _investCoupons.isNotEmpty && _selectedCoupons.any((c) => _investCoupons.contains(c));
+
+    // Определяем режим и ключи в зависимости от него
+    final Map<String, String> map;
+    final int orgKey, depKey, authKey, storeKey, shopKey, baseKey;
+
+    if (_isLegal) {
+      map = _managerProps.yur;
+      orgKey = _pH1cOrgYur; depKey = _pH1cDepYur; authKey = _pH1cAuthYur;
+      storeKey = _pH1cStoreYur; shopKey = _pH1cShopYur; baseKey = _pH1cBaseYur;
+    } else if (isInvest) {
+      // Физ. лицо с купоном ≥25% — данные как у юр. лица, но поля физ. лица
+      map = _managerProps.invest;
+      orgKey = _pH1cOrgFiz; depKey = _pH1cDepFiz; authKey = _pH1cAuthFiz;
+      storeKey = _pH1cStoreFiz; shopKey = _pH1cShopFiz; baseKey = _pH1cBaseFiz;
+    } else {
+      map = _managerProps.fiz;
+      orgKey = _pH1cOrgFiz; depKey = _pH1cDepFiz; authKey = _pH1cAuthFiz;
+      storeKey = _pH1cStoreFiz; shopKey = _pH1cShopFiz; baseKey = _pH1cBaseFiz;
+    }
+
+    if (map.isEmpty) return;
+
+    setState(() {
+      _h1cOrgCtrl.text   = map[orgKey.toString()]   ?? '';
+      _h1cDepCtrl.text   = map[depKey.toString()]   ?? '';
+      _h1cAuthCtrl.text  = map[authKey.toString()]  ?? '';
+      _h1cStoreCtrl.text = map[storeKey.toString()] ?? '';
+      _h1cShopCtrl.text  = map[shopKey.toString()]  ?? '';
+      _h1cBase1c         = map[baseKey.toString()]  ?? '';
+    });
+  }
+
   /// Загружает список групп купонов с сервера (coupon_rules.php)
+  /// Дозаполняет поля из Customer.loadActive() — fullName, phone, email.
+  /// Вызывается после didChangeDependencies, когда clientInfo уже обработан.
+  Future<void> _prefillFromCustomer() async {
+    final customer = await CustomerStorage.loadActive();
+    if (customer == null || !mounted) return;
+
+    if (customer.isCompany) {
+      setState(() {
+        // Полное наименование (хранится в lastName — см. search_customer_screen)
+        if (customer.lastName.isNotEmpty) _companyFullCtrl.text = customer.lastName;
+        // Телефон компании
+        if (customer.phone.isNotEmpty) _phoneCtrl.text = _formatPhone(customer.phone);
+        // Email компании
+        if (customer.email.isNotEmpty) _companyEmailCtrl.text = customer.email;
+      });
+    }
+  }
+
   Future<void> _loadCouponGroups() async {
     setState(() => _couponsLoading = true);
     try {
@@ -247,8 +363,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final groups = (json['groups'] as List? ?? [])
           .map((e) => CouponGroup.fromJson(e as Map<String, dynamic>))
           .toList();
+      final investList = (json['invest_coupons'] as List? ?? [])
+          .map((e) => e.toString())
+          .toList();
       if (!mounted) return;
-      setState(() { _couponGroups = groups; _couponsLoading = false; });
+      setState(() {
+        _couponGroups = groups;
+        if (investList.isNotEmpty) _investCoupons = investList;
+        _couponsLoading = false;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() => _couponsLoading = false);
@@ -293,7 +416,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   void dispose() {
     for (final c in [_extraServiceCtrl, _nameCtrl, _phoneCtrl,
-                     _projectCtrl, _areaCtrl, _companyCtrl, _couponCtrl]) {
+                     _projectCtrl, _areaCtrl, _companyCtrl,
+                     _companyFullCtrl, _companyEmailCtrl, _companyBinCtrl,
+                     _h1cOrgCtrl, _h1cDepCtrl, _h1cAuthCtrl,
+                     _h1cStoreCtrl, _h1cShopCtrl,
+                     _couponCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -457,9 +584,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // Отправка заказа
   // -------------------------------------------------------
   Future<void> _submit() async {
-    if (_nameCtrl.text.trim().isEmpty) { setState(() => _error = 'Укажите имя клиента'); return; }
-    if (_phoneCtrl.text.trim().isEmpty) { setState(() => _error = 'Укажите телефон'); return; }
-    if (!_isLegal && _clientType == null) { setState(() => _error = 'Выберите тип клиента'); return; }
+    // Валидация: для юр. лица обязательно только наименование компании
+    if (_isLegal) {
+      if (_companyCtrl.text.trim().isEmpty) { setState(() => _error = 'Укажите наименование компании'); return; }
+    } else {
+      if (_nameCtrl.text.trim().isEmpty) { setState(() => _error = 'Укажите имя клиента'); return; }
+      if (_phoneCtrl.text.trim().isEmpty) { setState(() => _error = 'Укажите телефон'); return; }
+      if (_clientType == null) { setState(() => _error = 'Выберите тип клиента'); return; }
+    }
 
     setState(() { _loading = true; _error = null; });
 
@@ -469,8 +601,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       final props = _isLegal ? {
         '$_pCompany'      : _companyCtrl.text.trim(),
+        '$_pCompanyFull'  : _companyFullCtrl.text.trim(),
+        '$_pCompanyEmail' : _companyEmailCtrl.text.trim(),
+        '$_pCompanyBin'   : _companyBinCtrl.text.trim(),
         '$_pContactName'  : _nameCtrl.text.trim(),
         '$_pPhoneLegal'   : _phoneCtrl.text.trim(),
+        // Скрытые поля юр. лица из HL-45
+        '$_pH1cOrgYur'   : _h1cOrgCtrl.text.trim(),
+        '$_pH1cDepYur'   : _h1cDepCtrl.text.trim(),
+        '$_pH1cAuthYur'  : _h1cAuthCtrl.text.trim(),
+        '$_pH1cStoreYur' : _h1cStoreCtrl.text.trim(),
+        '$_pH1cShopYur'  : _h1cShopCtrl.text.trim(),
+        '$_pH1cBaseYur'  : _h1cBase1c,
         '$_pProjectLegal' : _projectCtrl.text.trim(),
         '$_pCategoryLegal': _categories,
         '$_pStatusLegal'  : _orderStatus,
@@ -482,6 +624,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       } : {
         '$_pNamePhys'  : _nameCtrl.text.trim(),
         '$_pPhonePhys' : _phoneCtrl.text.trim(),
+        // Скрытые поля физ. лица из HL-45
+        '$_pH1cOrgFiz'   : _h1cOrgCtrl.text.trim(),
+        '$_pH1cDepFiz'   : _h1cDepCtrl.text.trim(),
+        '$_pH1cAuthFiz'  : _h1cAuthCtrl.text.trim(),
+        '$_pH1cStoreFiz' : _h1cStoreCtrl.text.trim(),
+        '$_pH1cShopFiz'  : _h1cShopCtrl.text.trim(),
+        '$_pH1cBaseFiz'  : _h1cBase1c,
         '$_pClientType': _clientType,
         '$_pProject'   : _projectCtrl.text.trim(),
         '$_pCategory'  : _categories,
@@ -567,7 +716,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _CollapsibleSection(number: 2, title: 'Тип плательщика', child: _buildToggle(
             options: ['Физическое лицо', 'Юридическое лицо'],
             selected: _isLegal ? 1 : 0,
-            onChanged: (i) => setState(() => _isLegal = i == 1),
+            onChanged: (i) {
+              setState(() => _isLegal = i == 1);
+              _applyManagerProps();
+            },
           )),
           _CollapsibleSection(number: 3, title: 'Доставка', child: _buildDeliveryBlock()),
           _CollapsibleSection(number: 4, title: 'Оплата', child: _buildPaymentBlock()),
@@ -687,6 +839,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   onRemove: () {
                     setState(() => _selectedCoupons.remove(code));
                     _applyCouponsOnServer();
+                    _applyManagerProps();
                   },
                 );
               }).toList(),
@@ -711,6 +864,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _couponCtrl.clear();
     });
     _applyCouponsOnServer();
+    _applyManagerProps(); // пересчитываем invest-режим
   }
 
   void _openCouponSheet() {
@@ -733,6 +887,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             }
           });
           _applyCouponsOnServer();
+          _applyManagerProps(); // пересчитываем invest-режим при выборе в bottom sheet
         },
       ),
     );
@@ -957,21 +1112,71 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         hint: 'Откуда клиент узнал о компании', required: true), const SizedBox(height: 6),
       _buildSelectGrid(items: _sources, selected: _clientSource, onSelect: (v) => setState(() => _clientSource = v)),
       const SizedBox(height: 16),
-      _FieldLabel(label: _isLegal ? 'ФИО контактного лица' : 'Имя клиента', required: true), const SizedBox(height: 6),
-      _buildTextField(_nameCtrl), const SizedBox(height: 16),
-      _FieldLabel(label: 'Телефон клиента', required: true), const SizedBox(height: 6),
-      _PhoneField(controller: _phoneCtrl),
+      // ФИО контактного лица (для юр. лица) или Имя клиента (для физ.)
+      if (_isLegal) ...[        _FieldLabel(label: 'ФИО контактного лица'), const SizedBox(height: 6),
+        _buildTextField(_nameCtrl), const SizedBox(height: 16),
+      ] else ...[        _FieldLabel(label: 'Имя клиента', required: true), const SizedBox(height: 6),
+        _buildTextField(_nameCtrl), const SizedBox(height: 16),
+        _FieldLabel(label: 'Телефон клиента', required: true), const SizedBox(height: 6),
+        _PhoneField(controller: _phoneCtrl),
+      ],
       _FieldLabel(label: 'Площадь объекта (квадратура)', required: true), const SizedBox(height: 6),
       _buildTextField(_areaCtrl, keyboardType: TextInputType.number), const SizedBox(height: 16),
       _FieldLabel(label: 'Тип объекта', required: true), const SizedBox(height: 6),
       _buildCheckboxGrid(items: _objTypes, selected: _objectType != null ? [_objectType!] : [], singleSelect: true,
         onToggle: (v) => setState(() => _objectType = _objectType == v ? null : v)), const SizedBox(height: 16),
-      if (_isLegal) ...[
-        _FieldLabel(label: 'Наименование компании', required: true), const SizedBox(height: 6),
+      // ── Поля юр. лица (только при _isLegal) ──────────────────────
+      if (_isLegal) ...[        _FieldLabel(label: 'Наименование компании', required: true), const SizedBox(height: 6),
         _buildTextField(_companyCtrl), const SizedBox(height: 16),
+        _FieldLabel(label: 'Полное наименование компании'), const SizedBox(height: 6),
+        _buildTextField(_companyFullCtrl), const SizedBox(height: 16),
+        _FieldLabel(label: 'Email'), const SizedBox(height: 6),
+        _buildTextField(_companyEmailCtrl, keyboardType: TextInputType.emailAddress), const SizedBox(height: 16),
+        _FieldLabel(label: 'Телефон компании'), const SizedBox(height: 6),
+        _PhoneField(controller: _phoneCtrl),
+        _FieldLabel(label: 'БИН/ИИН'), const SizedBox(height: 6),
+        _buildTextField(_companyBinCtrl, keyboardType: TextInputType.number), const SizedBox(height: 16),
       ],
       _FieldLabel(label: 'Менеджер клиента', required: true), const SizedBox(height: 6),
       _buildSelectGrid(items: _managers, selected: _manager, onSelect: (v) => setState(() => _manager = v)),
+
+      // ── Скрытые поля из HL-блока 45 (временно видимые для проверки) ─
+      const SizedBox(height: 24),
+      Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF9C4),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFF9A825)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Скрытые поля 1С (временно видимые)',
+            style: TextStyle(fontSize: 12, color: Color(0xFFE65100), fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          _FieldLabel(label: 'Организация'),
+          const SizedBox(height: 4),
+          _buildTextField(_h1cOrgCtrl), const SizedBox(height: 12),
+          _FieldLabel(label: 'Подразделение'),
+          const SizedBox(height: 4),
+          _buildTextField(_h1cDepCtrl), const SizedBox(height: 12),
+          _FieldLabel(label: 'Автор'),
+          const SizedBox(height: 4),
+          _buildTextField(_h1cAuthCtrl), const SizedBox(height: 12),
+          _FieldLabel(label: 'Склад'),
+          const SizedBox(height: 4),
+          _buildTextField(_h1cStoreCtrl), const SizedBox(height: 12),
+          _FieldLabel(label: 'Магазин'),
+          const SizedBox(height: 4),
+          _buildTextField(_h1cShopCtrl), const SizedBox(height: 12),
+          _FieldLabel(label: 'База 1С'),
+          const SizedBox(height: 4),
+          _buildToggle(
+            options: const ['AURA', 'INVEST'],
+            selected: _h1cBase1c == 'base-1c-invest' ? 1 : 0,
+            onChanged: (i) => setState(() => _h1cBase1c = i == 1 ? 'base-1c-invest' : 'base-1c-aura'),
+          ),
+        ]),
+      ),
     ]);
   }
 

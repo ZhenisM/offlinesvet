@@ -78,6 +78,8 @@ class PronsApiService {
           name: item['name']?.toString().trim() ?? '',
           fullName: item['fullName']?.toString().trim() ?? '',
           bin: item['bin']?.toString().trim() ?? '',
+          phone: item['phone']?.toString().trim() ?? '',
+          email: item['email']?.toString().trim() ?? '',
         );
       }).toList();
     } on DioException catch (e) {

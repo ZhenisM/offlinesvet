@@ -9,7 +9,7 @@ import 'package:offlinesvet/cart/models/cart_model.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 
-/// Список помещений для SELECT_ROOM — взят из реальных данных корзин на сервере.
+/// Список помещений для SELECT_ROOM.
 const _kRooms = [
   'без значения',
   'Цокольный этаж',
