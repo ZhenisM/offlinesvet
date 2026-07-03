@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:dio/dio.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
+import 'package:offlinesvet/profile/order_edit_screen.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
 import 'package:offlinesvet/cart/cart_api_service.dart';
@@ -108,6 +109,26 @@ class _ClientOrdersScreenState extends State<ClientOrdersScreen> {
   }
 
   // -------------------------------------------------------
+  // Редактировать заказ — открываем Bitrix-админку в WebView
+  Future<void> _editOrder(Map<String, dynamic> order) async {
+    final orderId = int.tryParse(order['id'].toString()) ?? 0;
+    if (orderId == 0) return;
+
+    final orderNumber = order['number']?.toString() ?? order['id'].toString();
+
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => OrderEditScreen(
+          orderId: orderId,
+          orderNumber: orderNumber,
+        ),
+      ),
+    );
+
+    // Если заказ был изменён — обновляем список
+    if (result == true && mounted) _load();
+  }
+
   // Повторить заказ
   // -------------------------------------------------------
   Future<void> _repeatOrder(Map<String, dynamic> order) async {
@@ -379,6 +400,7 @@ class _ClientOrdersScreenState extends State<ClientOrdersScreen> {
                             onRepeatLegal: _orders[i]['person_type_id'] == 5
                                 ? () => _repeatOrderLegal(_orders[i])
                                 : null,
+                            onEdit: () => _editOrder(_orders[i]),
                             fmt: _fmt,
                           );
                         },
@@ -394,11 +416,13 @@ class _OrderCard extends StatelessWidget {
     required this.order,
     required this.onRepeat,
     required this.onRepeatLegal,
+    required this.onEdit,
     required this.fmt,
   });
   final Map<String, dynamic> order;
   final VoidCallback onRepeat;
   final VoidCallback? onRepeatLegal;
+  final VoidCallback onEdit;
   final String Function(dynamic) fmt;
 
   @override
@@ -451,6 +475,7 @@ class _OrderCard extends StatelessWidget {
             child: _ActionsMenu(
               onRepeat: onRepeat,
               onRepeatLegal: onRepeatLegal,
+              onEdit: onEdit,
             ),
           ),
         ],
@@ -479,9 +504,10 @@ class _Field extends StatelessWidget {
 }
 
 class _ActionsMenu extends StatelessWidget {
-  const _ActionsMenu({required this.onRepeat, this.onRepeatLegal});
+  const _ActionsMenu({required this.onRepeat, this.onRepeatLegal, this.onEdit});
   final VoidCallback onRepeat;
   final VoidCallback? onRepeatLegal;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -489,6 +515,7 @@ class _ActionsMenu extends StatelessWidget {
       onSelected: (v) {
         if (v == 'repeat') onRepeat();
         if (v == 'repeat_legal' && onRepeatLegal != null) onRepeatLegal!();
+        if (v == 'edit' && onEdit != null) onEdit!();
       },
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
@@ -519,6 +546,15 @@ class _ActionsMenu extends StatelessWidget {
               Icon(Icons.arrow_forward, size: 18, color: Colors.black54),
               SizedBox(width: 8),
               Text('Повторить на юр.лицо'),
+            ]),
+          ),
+        if (onEdit != null)
+          const PopupMenuItem(
+            value: 'edit',
+            child: Row(children: [
+              Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4CAF50)),
+              SizedBox(width: 8),
+              Text('Редактировать', style: TextStyle(color: Color(0xFF4CAF50))),
             ]),
           ),
       ],

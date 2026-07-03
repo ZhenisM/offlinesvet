@@ -56,6 +56,13 @@ class _LoginScreenState extends State<LoginScreen > {
               await prefs.setString("user_name", fullName);
             }
 
+            // Сохраняем куки сессии для WebView
+            // login.php на prons.kz устанавливает PHPSESSID и BITRIX_SM_*
+            final rawCookies = response.headers['set-cookie'] ?? '';
+            if (rawCookies.isNotEmpty) {
+              await prefs.setString('session_cookies', rawCookies);
+            }
+
             if (mounted) Navigator.pushReplacementNamed(context, "/home");
           } else {
             setState(() {
