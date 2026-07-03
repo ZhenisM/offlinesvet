@@ -11,6 +11,8 @@ import 'package:offlinesvet/pages/main_screen.dart';
 import 'package:offlinesvet/auth/login_screen.dart';
 import 'package:offlinesvet/auth/splash_screen.dart';
 import 'package:offlinesvet/catalog/search/search_screen.dart';
+import 'package:offlinesvet/catalog/favorites/favorites_screen.dart';
+import 'package:offlinesvet/catalog/compare/compare_screen.dart';
 
 final routes = {
   '/': (context) => SplashScreen(),
@@ -24,4 +26,6 @@ final routes = {
   '/scanner': (context) => const ScannerScreen(),
   '/profile': (context) => const ProfileScreen(),
   '/search': (context) => const SearchScreen(),
+  '/favorites': (context) => const FavoritesScreen(),
+  '/compare': (context) => const CompareScreen(),
 };

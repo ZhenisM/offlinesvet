@@ -9,6 +9,9 @@ import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:offlinesvet/catalog/favorites/favorites_screen.dart';
+import 'package:offlinesvet/catalog/compare/compare_screen.dart';
 
 class CategoryScreen extends StatefulWidget {
   final Section section;
@@ -178,17 +181,31 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   ),
                 ),
                 const Spacer(),
-                // Избранное (заглушка)
-                IconButton(
-                  icon: const Icon(Icons.favorite_border, size: 22),
-                  color: Colors.black54,
-                  onPressed: () {},
+                // Избранное
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed('/favorites'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: SvgPicture.asset(
+                      'assets/icons/heart.svg',
+                      width: 22, height: 22,
+                      colorFilter: const ColorFilter.mode(
+                        Colors.black54, BlendMode.srcIn),
+                    ),
+                  ),
                 ),
-                // Сортировка (заглушка)
-                IconButton(
-                  icon: const Icon(Icons.sort, size: 22),
-                  color: Colors.black54,
-                  onPressed: () {},
+                // Сравнение
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed('/compare'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: SvgPicture.asset(
+                      'assets/icons/compare.svg',
+                      width: 22, height: 22,
+                      colorFilter: const ColorFilter.mode(
+                        Colors.black54, BlendMode.srcIn),
+                    ),
+                  ),
                 ),
               ]),
             ),

@@ -1,18 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:html_unescape/html_unescape.dart';
+import 'package:offlinesvet/catalog/favorites/favorites_service.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/cart/view/add_to_cart_sheet.dart';
 
 final _unescape = HtmlUnescape();
 
-class ProductTile extends StatelessWidget {
+class ProductTile extends StatefulWidget {
   const ProductTile({super.key, required this.product});
   final Product product;
 
+  @override
+  State<ProductTile> createState() => _ProductTileState();
+}
+
+class _ProductTileState extends State<ProductTile> {
+  bool _isFavorite = false;
+  bool _favoriteLoading = false;
+
+  int get _productId => int.tryParse(widget.product.id) ?? 0;
+
   double get _price {
-    if (product.prices.isEmpty) return 0;
-    return product.prices
+    if (widget.product.prices.isEmpty) return 0;
+    return widget.product.prices
         .map((p) => p.price)
         .reduce((a, b) => a < b ? a : b);
   }
@@ -28,9 +40,37 @@ class ProductTile extends StatelessWidget {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _isFavorite = FavoritesState.instance.isFavorite(_productId);
+    FavoritesState.instance.addListener(_onStateChanged);
+  }
+
+  @override
+  void dispose() {
+    FavoritesState.instance.removeListener(_onStateChanged);
+    super.dispose();
+  }
+
+  void _onStateChanged() {
+    if (!mounted) return;
+    final isFav = FavoritesState.instance.isFavorite(_productId);
+    if (isFav != _isFavorite) {
+      setState(() => _isFavorite = isFav);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_favoriteLoading) return;
+    setState(() => _favoriteLoading = true);
+    await FavoritesService.instance.toggle(_productId);
+    if (mounted) setState(() => _favoriteLoading = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed('/products-item', arguments: product),
+      onTap: () => Navigator.of(context).pushNamed('/products-item', arguments: widget.product),
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
@@ -46,17 +86,15 @@ class ProductTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // -----------------------------------------------
             // Картинка
-            // -----------------------------------------------
             Expanded(
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                 child: SizedBox(
                   width: double.infinity,
-                  child: product.image != null && product.image!.isNotEmpty
+                  child: widget.product.image != null && widget.product.image!.isNotEmpty
                       ? CachedNetworkImage(
-                          imageUrl: product.image!,
+                          imageUrl: widget.product.image!,
                           fit: BoxFit.cover,
                           placeholder: (_, __) => Container(
                             color: Colors.grey.shade100,
@@ -69,46 +107,31 @@ class ProductTile extends StatelessWidget {
                           ),
                           errorWidget: (_, __, ___) => Container(
                             color: Colors.grey.shade100,
-                            child: const Icon(
-                              Icons.image_not_supported_outlined,
-                              color: Colors.grey,
-                            ),
+                            child: const Icon(Icons.image_not_supported_outlined, color: Colors.grey),
                           ),
                         )
                       : Container(
                           color: Colors.grey.shade100,
-                          child: const Icon(
-                            Icons.image_not_supported_outlined,
-                            color: Colors.grey,
-                          ),
+                          child: const Icon(Icons.image_not_supported_outlined, color: Colors.grey),
                         ),
                 ),
               ),
             ),
 
-            // -----------------------------------------------
             // Текстовая часть
-            // -----------------------------------------------
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Цена
                   if (_price > 0)
                     Text(
                       _fmt(_price),
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                     ),
-
                   const SizedBox(height: 4),
-
-                  // Название
                   Text(
-                    _unescape.convert(product.name),
+                    _unescape.convert(widget.product.name),
                     style: const TextStyle(fontSize: 12, color: Colors.black87),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -117,41 +140,85 @@ class ProductTile extends StatelessWidget {
               ),
             ),
 
-            // -----------------------------------------------
-            // Три иконки внизу
-            // -----------------------------------------------
+            // ── Три иконки ───────────────────────────────────
             Row(
               children: [
                 // Корзина
                 Expanded(
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.shopping_cart_outlined, size: 20),
+                  child: _IconBtn(
+                    svgAsset: 'assets/icons/shopping-cart.svg',
                     color: Colors.black54,
-                    onPressed: () => showAddToCartSheet(context, product),
+                    onTap: () => showAddToCartSheet(context, widget.product),
                   ),
                 ),
-                // Избранное (заглушка)
+
+                // Избранное (сердце)
                 Expanded(
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.favorite_border, size: 20),
-                    color: Colors.black54,
-                    onPressed: () {},
-                  ),
+                  child: _favoriteLoading
+                      ? const SizedBox(
+                          height: 40,
+                          child: Center(
+                            child: SizedBox(
+                              width: 16, height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Color(0xFF4CAF50)),
+                            ),
+                          ),
+                        )
+                      : _IconBtn(
+                          svgAsset: 'assets/icons/heart.svg',
+                          // Зелёный если в избранном, серый если нет
+                          color: _isFavorite
+                              ? const Color(0xFF4CAF50)
+                              : Colors.black54,
+                          onTap: _toggleFavorite,
+                        ),
                 ),
-                // Ещё (заглушка)
+
+                // Сравнение
                 Expanded(
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.menu, size: 20),
+                  child: _IconBtn(
+                    svgAsset: 'assets/icons/compare.svg',
                     color: Colors.black54,
-                    onPressed: () {},
+                    onTap: () {
+                      // TODO: реализовать сравнение
+                    },
                   ),
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Кнопка с SVG иконкой
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({
+    required this.svgAsset,
+    required this.color,
+    required this.onTap,
+  });
+  final String svgAsset;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        height: 40,
+        child: Center(
+          child: SvgPicture.asset(
+            svgAsset,
+            width: 20,
+            height: 20,
+            colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+          ),
         ),
       ),
     );
