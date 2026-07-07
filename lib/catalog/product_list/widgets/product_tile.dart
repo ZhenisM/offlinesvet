@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:html_unescape/html_unescape.dart';
 import 'package:offlinesvet/catalog/favorites/favorites_service.dart';
+import 'package:offlinesvet/catalog/compare/compare_store.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/cart/view/add_to_cart_sheet.dart';
 
@@ -19,6 +20,8 @@ class ProductTile extends StatefulWidget {
 class _ProductTileState extends State<ProductTile> {
   bool _isFavorite = false;
   bool _favoriteLoading = false;
+  bool _isCompared = false;
+  bool _compareLoading = false;
 
   int get _productId => int.tryParse(widget.product.id) ?? 0;
 
@@ -44,11 +47,14 @@ class _ProductTileState extends State<ProductTile> {
     super.initState();
     _isFavorite = FavoritesState.instance.isFavorite(_productId);
     FavoritesState.instance.addListener(_onStateChanged);
+    _isCompared = CompareState.instance.isCompared(_productId);
+    CompareState.instance.addListener(_onCompareChanged);
   }
 
   @override
   void dispose() {
     FavoritesState.instance.removeListener(_onStateChanged);
+    CompareState.instance.removeListener(_onCompareChanged);
     super.dispose();
   }
 
@@ -58,6 +64,19 @@ class _ProductTileState extends State<ProductTile> {
     if (isFav != _isFavorite) {
       setState(() => _isFavorite = isFav);
     }
+  }
+
+  void _onCompareChanged() {
+    if (!mounted) return;
+    final isComp = CompareState.instance.isCompared(_productId);
+    if (isComp != _isCompared) setState(() => _isCompared = isComp);
+  }
+
+  Future<void> _toggleCompare() async {
+    if (_compareLoading) return;
+    setState(() => _compareLoading = true);
+    await CompareStore.instance.toggle(widget.product);
+    if (mounted) setState(() => _compareLoading = false);
   }
 
   Future<void> _toggleFavorite() async {
@@ -177,13 +196,15 @@ class _ProductTileState extends State<ProductTile> {
 
                 // Сравнение
                 Expanded(
-                  child: _IconBtn(
-                    svgAsset: 'assets/icons/compare.svg',
-                    color: Colors.black54,
-                    onTap: () {
-                      // TODO: реализовать сравнение
-                    },
-                  ),
+                  child: _compareLoading
+                      ? const SizedBox(height: 40,
+                          child: Center(child: SizedBox(width: 16, height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4CAF50)))))
+                      : _IconBtn(
+                          svgAsset: 'assets/icons/compare.svg',
+                          color: _isCompared ? const Color(0xFF4CAF50) : Colors.black54,
+                          onTap: _toggleCompare,
+                        ),
                 ),
               ],
             ),
