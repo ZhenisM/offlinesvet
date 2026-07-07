@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -38,21 +37,23 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   }
 
   Future<void> _initWebView() async {
-    // 1. Получаем сохранённые куки сессии
-    final prefs = await SharedPreferences.getInstance();
-    final rawCookies = prefs.getString('session_cookies') ?? '';
+    final prefs  = await SharedPreferences.getInstance();
+    final userId = prefs.getString('user_id') ?? '';
+    final token  = prefs.getString('auth_token') ?? '';
 
-    // 2. Парсим куки: "PHPSESSID=abc; path=/; BITRIX_SM_LOGIN=user; ..."
-    final cookies = _parseCookies(rawCookies);
-    if (cookies.isEmpty) {
-      setState(() {
-        _error = 'Сессия не найдена. Войдите в приложение заново.';
-        _loading = false;
-      });
-      return;
-    }
+    // Формируем URL через webview_login.php — он авторизует и редиректит
+    final redirectPath = Uri.encodeComponent(
+      '/bitrix/admin/sale_order_edit.php'
+      '?ID=${widget.orderId}&lang=ru&IFRAME=Y',
+    );
+    final startUrl = userId.isNotEmpty
+        ? 'https://$_baseHost/ajax/offlinesvet/webview_login.php'
+          '?user_id=${Uri.encodeComponent(userId)}'
+          '&token=${Uri.encodeComponent(token)}'
+          '&redirect=$redirectPath'
+        : _editUrl;
 
-    // 3. Инициализируем WebView
+    // Инициализируем WebView
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
@@ -101,40 +102,10 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         },
       ));
 
-    // 4. Прокидываем куки через WebView cookie manager
-    final cookieManager = WebViewCookieManager();
-    for (final cookie in cookies) {
-      await cookieManager.setCookie(WebViewCookie(
-        name:   cookie['name']!,
-        value:  cookie['value']!,
-        domain: _baseHost,
-        path:   '/',
-      ));
-    }
-
     setState(() => _cookiesReady = true);
 
-    // 5. Загружаем страницу
-    await _controller.loadRequest(Uri.parse(_editUrl));
-  }
-
-  /// Парсит строку Set-Cookie заголовка в список {name, value}
-  List<Map<String, String>> _parseCookies(String raw) {
-    final result = <Map<String, String>>[];
-    // Set-Cookie может содержать несколько кук через запятую или \n
-    final parts = raw.split(RegExp(r',(?=[^;]+=[^;]+)'));
-    for (final part in parts) {
-      final nameValue = part.trim().split(';').first.trim();
-      final eqIdx = nameValue.indexOf('=');
-      if (eqIdx > 0) {
-        final name  = nameValue.substring(0, eqIdx).trim();
-        final value = nameValue.substring(eqIdx + 1).trim();
-        if (name.isNotEmpty && value.isNotEmpty) {
-          result.add({'name': name, 'value': value});
-        }
-      }
-    }
-    return result;
+    // Загружаем через webview_login.php — он авторизует и редиректит на редактор
+    await _controller.loadRequest(Uri.parse(startUrl));
   }
 
   @override

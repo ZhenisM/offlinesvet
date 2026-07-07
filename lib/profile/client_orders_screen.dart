@@ -364,7 +364,7 @@ class _ClientOrdersScreenState extends State<ClientOrdersScreen> {
         title: const Text('Заказы клиента', style: TextStyle(fontWeight: FontWeight.w600)),
         centerTitle: false,
         actions: [
-          const AnimatedSearchBar(),
+          const CatalogSearchBar(),
           const SizedBox(width: 4),
         ],
       ),
@@ -387,7 +387,7 @@ class _ClientOrdersScreenState extends State<ClientOrdersScreen> {
                           crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
                           crossAxisSpacing: 10,
                           mainAxisSpacing: 10,
-                          childAspectRatio: 0.75,
+                          mainAxisExtent: 310, // фиксированная высота — достаточно для всех полей + кнопки
                         ),
                         itemCount: _orders.length + (_loadingMore ? 1 : 0),
                         itemBuilder: (_, i) {
@@ -450,28 +450,26 @@ class _OrderCard extends StatelessWidget {
           ),
 
           // Поля
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _Field(label: 'Дата', value: order['date'] ?? ''),
-                  _Field(label: 'Сумма', value: fmt(order['price'])),
-                  _Field(label: 'Статус', value: statusName, valueColor: statusColor),
-                  if ((order['manager'] ?? '').isNotEmpty)
-                    _Field(label: 'Менеджер', value: order['manager']),
-                  _Field(label: 'Тип плательщика', value: order['person_type'] ?? ''),
-                  if ((order['client_name'] ?? '').isNotEmpty)
-                    _Field(label: 'Клиент', value: order['client_name']),
-                ],
-              ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _Field(label: 'Дата', value: order['date'] ?? ''),
+                _Field(label: 'Сумма', value: fmt(order['price'])),
+                _Field(label: 'Статус', value: statusName, valueColor: statusColor),
+                if ((order['manager'] ?? '').isNotEmpty)
+                  _Field(label: 'Менеджер', value: order['manager']),
+                _Field(label: 'Тип плательщика', value: order['person_type'] ?? ''),
+                if ((order['client_name'] ?? '').isNotEmpty)
+                  _Field(label: 'Клиент', value: order['client_name']),
+              ],
             ),
           ),
 
-          // Кнопка Действия
+          // Кнопка Действия — всегда внизу блока, не перекрывает контент
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
             child: _ActionsMenu(
               onRepeat: onRepeat,
               onRepeatLegal: onRepeatLegal,

@@ -75,7 +75,7 @@ class _ClientCabinetScreenState extends State<ClientCabinetScreen> {
         title: const Text('О клиенте', style: TextStyle(fontWeight: FontWeight.w600)),
         centerTitle: false,
         actions: [
-          const AnimatedSearchBar(),
+          const CatalogSearchBar(),
           const SizedBox(width: 4),
         ],
       ),
