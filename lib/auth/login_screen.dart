@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart' as dio_lib;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:dio/dio.dart' as dio_pkg;
 
 
 
@@ -25,25 +25,23 @@ class _LoginScreenState extends State<LoginScreen > {
     });
 
     try {
-      final dioClient = dio_pkg.Dio();
-      final dioResponse = await dioClient.post(
+      final dioClient = dio_lib.Dio(dio_lib.BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+      ));
+      final dioResp = await dioClient.post(
         'https://prons.kz/ajax/login.php',
-        data: dio_pkg.FormData.fromMap({
-          'login'   : _loginController.text,
-          'password': _passwordController.text,
-        }),
-        options: dio_pkg.Options(
-          responseType: dio_pkg.ResponseType.plain,
-          receiveTimeout: const Duration(seconds: 15),
-          sendTimeout: const Duration(seconds: 15),
+        data: 'login=${Uri.encodeComponent(_loginController.text)}&password=${Uri.encodeComponent(_passwordController.text)}',
+        options: dio_lib.Options(
+          contentType: 'application/x-www-form-urlencoded',
+          responseType: dio_lib.ResponseType.plain,
         ),
       );
-      // Совместимость с остальным кодом
-      final response = _DioResponseWrapper(dioResponse);
 
-      if (response.statusCode == 200) {
-        if (response.body.isNotEmpty) {
-          final data = json.decode(response.body);
+      if (dioResp.statusCode == 200) {
+        final body = dioResp.data?.toString() ?? '';
+        if (body.isNotEmpty) {
+          final data = json.decode(body);
 
           if (data["result"] != null) {
             String token = data["result"]["token"];
@@ -52,9 +50,6 @@ class _LoginScreenState extends State<LoginScreen > {
 
             SharedPreferences prefs = await SharedPreferences.getInstance();
             await prefs.setString("auth_token", token);
-            // Сохраняем логин и пароль для авторизации в Bitrix-админке (редактор заказов)
-            await prefs.setString("bitrix_login", _loginController.text.trim());
-            await prefs.setString("bitrix_password", _passwordController.text);
             if (userId != null) {
               await prefs.setString("user_id", userId);
             }
@@ -62,10 +57,10 @@ class _LoginScreenState extends State<LoginScreen > {
               await prefs.setString("user_name", fullName);
             }
 
-            // Сохраняем куки из dio response (dio корректно парсит Set-Cookie)
-            final cookieParts = <String>[];
-            final rawHeaders = dioResponse.headers.map['set-cookie'] ?? [];
-            cookieParts.addAll(rawHeaders);
+            // Сохраняем куки сессии для WebView
+            // login.php на prons.kz устанавливает PHPSESSID и BITRIX_SM_*
+            // Собираем ВСЕ Set-Cookie через dio
+            final cookieParts = dioResp.headers.map['set-cookie'] ?? [];
             if (cookieParts.isNotEmpty) {
               await prefs.setString('session_cookies', cookieParts.join(', '));
             }
@@ -80,7 +75,7 @@ class _LoginScreenState extends State<LoginScreen > {
           setState(() => _errorMessage = "Пустой ответ сервера");
         }
       } else {
-        setState(() => _errorMessage = "Ошибка сервера: ${response.statusCode}");
+        setState(() => _errorMessage = "Ошибка сервера: ${dioResp.statusCode}");
       }
     } catch (e) {
       setState(() => _errorMessage = e.toString().replaceFirst('Exception: ', ''));
@@ -121,12 +116,4 @@ class _LoginScreenState extends State<LoginScreen > {
       ),
     );
   }
-}
-
-/// Обёртка для совместимости dio ответа с кодом который ожидает http.Response
-class _DioResponseWrapper {
-  final dio_pkg.Response _r;
-  _DioResponseWrapper(this._r);
-  int get statusCode => _r.statusCode ?? 0;
-  String get body => _r.data?.toString() ?? '';
 }

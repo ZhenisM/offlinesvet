@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+/// Экран редактирования заказа через Bitrix-админку на prons.kz.
+/// Открывает /bitrix/admin/sale_order_edit.php в WebView с куками сессии.
 class OrderEditScreen extends StatefulWidget {
   final int orderId;
   final String orderNumber;
@@ -21,12 +24,9 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   bool _loading = true;
   bool _cookiesReady = false;
   String? _error;
-  String _login = '';
-  String _password = '';
 
   static const _baseHost = 'prons.kz';
   static const _editPath = '/bitrix/admin/sale_order_edit.php';
-  static const _adminLoginUrl = 'https://prons.kz/bitrix/admin/index.php';
 
   String get _editUrl =>
       'https://$_baseHost$_editPath?ID=${widget.orderId}&lang=ru&IFRAME=Y';
@@ -38,131 +38,131 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   }
 
   Future<void> _initWebView() async {
+    // 1. Получаем сохранённые куки сессии
     final prefs = await SharedPreferences.getInstance();
-    _login    = prefs.getString('bitrix_login') ?? '';
-    _password = prefs.getString('bitrix_password') ?? '';
+    final rawCookies = prefs.getString('session_cookies') ?? '';
+    print('RAW COOKIES: ' + rawCookies);
 
-    if (_login.isEmpty || _password.isEmpty) {
+    // 2. Парсим куки: "PHPSESSID=abc; path=/; BITRIX_SM_LOGIN=user; ..."
+    final cookies = _parseCookies(rawCookies);
+    print('PARSED COUNT: ' + cookies.length.toString());
+    if (cookies.isEmpty) {
       setState(() {
-        _error = 'Войдите в приложение заново чтобы открыть редактор.';
+        _error = 'Сессия не найдена. Войдите в приложение заново.';
         _loading = false;
       });
       return;
     }
 
+    // 3. Инициализируем WebView
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageStarted: (_) {
-          if (mounted) setState(() => _loading = true);
-        },
+        onPageStarted: (_) => setState(() => _loading = true),
         onPageFinished: (url) {
-          if (mounted) setState(() => _loading = false);
-
-          // Если это страница логина Bitrix-админки — заполняем и сабмитим форму
-          if (url.contains('/bitrix/admin/index.php') ||
-              url.contains('AUTH_FORM') ||
-              url == _adminLoginUrl) {
-            final safeLogin    = _login.replaceAll("'", "\\'");
-            final safePassword = _password.replaceAll("'", "\\'");
-            final editUrl      = _editUrl;
-            _controller.runJavaScript('''
-              (function() {
-                var loginField = document.querySelector('input[name="USER_LOGIN"]');
-                var passField  = document.querySelector('input[name="USER_PASSWORD"]');
-                var form       = document.querySelector('form');
-                
-                if (loginField && passField && form) {
-                  loginField.value = '$safeLogin';
-                  passField.value  = '$safePassword';
-                  
-                  // Добавляем backurl чтобы после логина попасть на редактор
-                  var backurl = document.querySelector('input[name="backurl"]');
-                  if (!backurl) {
-                    backurl = document.createElement('input');
-                    backurl.type = 'hidden';
-                    backurl.name = 'backurl';
-                    form.appendChild(backurl);
-                  }
-                  backurl.value = '$editUrl';
-                  
-                  // Устанавливаем тип авторизации
-                  var authForm = document.querySelector('input[name="AUTH_FORM"]');
-                  if (!authForm) {
-                    authForm = document.createElement('input');
-                    authForm.type = 'hidden';
-                    authForm.name = 'AUTH_FORM';
-                    authForm.value = 'Y';
-                    form.appendChild(authForm);
-                  }
-                  var typeField = document.querySelector('input[name="TYPE"]');
-                  if (!typeField) {
-                    typeField = document.createElement('input');
-                    typeField.type = 'hidden';
-                    typeField.name = 'TYPE';
-                    typeField.value = 'AUTH';
-                    form.appendChild(typeField);
-                  }
-                  
-                  form.submit();
-                }
-              })();
-            ''');
-          }
-
-          // Если авторизация прошла и мы в админке — переходим на редактор
-          if (url.contains('/bitrix/admin/') &&
-              !url.contains('AUTH_FORM') &&
-              !url.contains('index.php') &&
-              !url.contains(_editPath)) {
-            _controller.loadRequest(Uri.parse(_editUrl));
-            return;
-          }
-
-          // Если уже на странице index.php но без формы логина — значит залогинены
-          if (url.contains('/bitrix/admin/index.php')) {
-            _controller.runJavaScript('''
-              if (!document.querySelector('input[name="USER_LOGIN"]')) {
-                window.location.href = '${_editUrl.replaceAll("'", "\'")}';
-              }
-            ''');
-          }
-
-          // На любой другой странице — скрываем элементы Bitrix-админки
+          setState(() => _loading = false);
+          // Скрываем лишние элементы Bitrix-админки (шапка, меню)
           _controller.runJavaScript('''
+            // Скрываем верхнее меню и левую панель Bitrix
             var header = document.getElementById('header');
             if (header) header.style.display = 'none';
             var leftPanel = document.getElementById('bx-panel');
             if (leftPanel) leftPanel.style.display = 'none';
             var workzone = document.getElementById('workarea-content');
             if (workzone) workzone.style.marginLeft = '0';
+            // Кнопка "Список" в Bitrix-админке — скрываем
             var btnList = document.getElementById('btn_list');
             if (btnList) btnList.style.display = 'none';
           ''');
         },
         onWebResourceError: (error) {
-          if (mounted && error.errorType == WebResourceErrorType.hostLookup) {
-            setState(() => _error = 'Нет подключения к интернету');
-          }
+          if (mounted) setState(() => _error = error.description);
         },
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
           if (uri == null) return NavigationDecision.prevent;
-          if (uri.host == _baseHost) return NavigationDecision.navigate;
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Заказ сохранён')));
-            Navigator.of(context).pop(true);
+
+          // Разрешаем только страницы редактирования заказа на prons.kz
+          final allowed = [
+            '/bitrix/admin/sale_order_edit.php',
+            '/bitrix/admin/sale_order_shipment_edit.php',
+          ];
+          final isAllowed = uri.host == _baseHost &&
+              allowed.any((p) => uri.path.startsWith(p));
+
+          if (!isAllowed) {
+            // Переход на другую страницу — закрываем WebView как на сайте
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Заказ сохранён')));
+              Navigator.of(context).pop(true); // true = заказ изменён
+            }
+            return NavigationDecision.prevent;
           }
-          return NavigationDecision.prevent;
+          return NavigationDecision.navigate;
         },
       ));
 
+    // 4. Прокидываем куки через WebView cookie manager
+    final cookieManager = WebViewCookieManager();
+    for (final cookie in cookies) {
+      final name  = cookie['name']!;
+      final value = cookie['value']!;
+      // Пропускаем удалённые куки
+      if (value == 'deleted') continue;
+      // BITRIX_SM_* устанавливаем с точкой в домене
+      final domain = name.startsWith('BITRIX_SM_') ? '.$_baseHost' : _baseHost;
+      await cookieManager.setCookie(WebViewCookie(
+        name:   name,
+        value:  Uri.decodeComponent(value), // декодируем %20, %3A и т.д.
+        domain: domain,
+        path:   '/',
+      ));
+    }
+
     setState(() => _cookiesReady = true);
 
-    // Открываем страницу логина Bitrix-админки
-    // onPageFinished автоматически заполнит форму и отправит её
-    await _controller.loadRequest(Uri.parse(_adminLoginUrl));
+    // 5. Сначала загружаем пустую страницу на prons.kz чтобы WebView
+    // инициализировал контекст домена, потом устанавливаем куки и переходим
+    await _controller.loadRequest(Uri.parse('https://$_baseHost/'));
+    // Даём время на инициализацию
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Устанавливаем куки повторно после инициализации контекста
+    for (final cookie in cookies) {
+      final name  = cookie['name']!;
+      final value = cookie['value']!;
+      if (value == 'deleted') continue;
+      final domain = name.startsWith('BITRIX_SM_') ? '.$_baseHost' : _baseHost;
+      await cookieManager.setCookie(WebViewCookie(
+        name:   name,
+        value:  Uri.decodeComponent(value),
+        domain: domain,
+        path:   '/',
+      ));
+    }
+    
+    // Теперь переходим на редактор
+    await _controller.loadRequest(Uri.parse(_editUrl));
+  }
+
+  /// Парсит строку Set-Cookie заголовка в список {name, value}
+  List<Map<String, String>> _parseCookies(String raw) {
+    final result = <Map<String, String>>[];
+    // Set-Cookie может содержать несколько кук через запятую или \n
+    final parts = raw.split(RegExp(r',(?=[^;]+=[^;]+)'));
+    for (final part in parts) {
+      final nameValue = part.trim().split(';').first.trim();
+      final eqIdx = nameValue.indexOf('=');
+      if (eqIdx > 0) {
+        final name  = nameValue.substring(0, eqIdx).trim();
+        final value = nameValue.substring(eqIdx + 1).trim();
+        if (name.isNotEmpty && value.isNotEmpty) {
+          result.add({'name': name, 'value': value});
+        }
+      }
+    }
+    return result;
   }
 
   @override
