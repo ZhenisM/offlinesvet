@@ -23,6 +23,8 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   bool _cookiesReady = false;
+  bool _editLoaded = false; // редактор уже был загружен
+  static bool _cookiesInitialized = false; // куки уже установлены (между сессиями)
   String? _error;
 
   static const _baseHost = 'prons.kz';
@@ -61,6 +63,9 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         onPageStarted: (_) => setState(() => _loading = true),
         onPageFinished: (url) {
           setState(() => _loading = false);
+          if (url.contains('/bitrix/admin/sale_order_edit.php')) {
+            _editLoaded = true;
+          }
           // Скрываем лишние элементы Bitrix-админки (шапка, меню)
           _controller.runJavaScript('''
             // Скрываем верхнее меню и левую панель Bitrix
@@ -75,27 +80,22 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
             if (btnList) btnList.style.display = 'none';
           ''');
         },
-        onWebResourceError: (error) {
-          if (mounted) setState(() => _error = error.description);
-        },
+        // onWebResourceError убран — мелкие ошибки ресурсов не должны закрывать экран
+
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
           if (uri == null) return NavigationDecision.prevent;
 
-          // Разрешаем только страницы редактирования заказа на prons.kz
-          final allowed = [
-            '/bitrix/admin/sale_order_edit.php',
-            '/bitrix/admin/sale_order_shipment_edit.php',
-          ];
-          final isAllowed = uri.host == _baseHost &&
-              allowed.any((p) => uri.path.startsWith(p));
+          // Разрешаем всю навигацию на prons.kz
+          final isAllowed = uri.host == _baseHost;
 
           if (!isAllowed) {
-            // Переход на другую страницу — закрываем WebView как на сайте
-            if (mounted) {
+            // Закрываем только если редактор уже был открыт
+            // (не на этапе загрузки prons.kz для инициализации кук)
+            if (_editLoaded && mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Заказ сохранён')));
-              Navigator.of(context).pop(true); // true = заказ изменён
+              Navigator.of(context).pop(true);
             }
             return NavigationDecision.prevent;
           }
@@ -122,13 +122,7 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
 
     setState(() => _cookiesReady = true);
 
-    // 5. Сначала загружаем пустую страницу на prons.kz чтобы WebView
-    // инициализировал контекст домена, потом устанавливаем куки и переходим
-    await _controller.loadRequest(Uri.parse('https://$_baseHost/'));
-    // Даём время на инициализацию
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    // Устанавливаем куки повторно после инициализации контекста
+    // Всегда устанавливаем куки (новый WebView контроллер каждый раз)
     for (final cookie in cookies) {
       final name  = cookie['name']!;
       final value = cookie['value']!;
@@ -141,8 +135,16 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         path:   '/',
       ));
     }
+
+    if (!_cookiesInitialized) {
+      // Первый раз — загружаем prons.kz чтобы WebView инициализировал контекст домена
+      // и куки стали доступны для последующих запросов
+      await _controller.loadRequest(Uri.parse('https://$_baseHost/'));
+      await Future.delayed(const Duration(milliseconds: 800));
+      _cookiesInitialized = true;
+    }
     
-    // Теперь переходим на редактор
+    // Переходим на редактор
     await _controller.loadRequest(Uri.parse(_editUrl));
   }
 
