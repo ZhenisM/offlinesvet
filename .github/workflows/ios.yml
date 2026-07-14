@@ -40,8 +40,17 @@ jobs:
       - name: Build iOS (No Code Sign)
         run: flutter build ios --release --no-codesign
 
-      - name: Upload iOS Build
+      - name: Create Payload
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+
+      - name: Create IPA
+        run: |
+          zip -r offlinesvet.ipa Payload
+
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build
-          path: build/ios/iphoneos
+          name: offlinesvet-ipa
+          path: offlinesvet.ipa
