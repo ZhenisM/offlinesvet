@@ -51,3 +51,13 @@ jobs:
         with:
           name: offlinesvet-aab
           path: build/app/outputs/bundle/release/app-release.aab
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release ${{ github.run_number }}
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
