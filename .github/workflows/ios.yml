@@ -1,0 +1,47 @@
+name: iOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - github-actions
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.5"
+          channel: stable
+          cache: true
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Show Flutter Version
+        run: flutter --version
+
+      - name: Check iOS Project
+        run: |
+          ls -la ios
+          ls -la ios/Runner
+          ls -la ios/Flutter
+
+      - name: Build iOS (No Code Sign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload iOS Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: build/ios/iphoneos
