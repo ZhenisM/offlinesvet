@@ -654,7 +654,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           'coupons'      : _selectedCoupons,
           'props'        : props,
         }),
-        options: Options(contentType: 'application/json', responseType: ResponseType.plain),
+        options: Options(
+          contentType: 'application/json',
+          responseType: ResponseType.plain,
+          // Сервер ВСЕГДА возвращает валидный JSON с полем 'success' и
+          // 'error' — даже при коде 400/500 (respondError() и
+          // set_exception_handler на стороне create_order.php). Раньше
+          // дефолтный validateStatus у Dio считал такие ответы исключением
+          // и выбрасывал DioException ДО того, как код успевал прочитать
+          // тело ответа — поэтому вместо реального текста ошибки от сервера
+          // пользователь всегда видел один и тот же общий текст исключения.
+          // Теперь принимаем любой статус и разбираем тело сами.
+          validateStatus: (status) => true,
+        ),
       );
 
       final result = jsonDecode(response.data as String) as Map<String, dynamic>;
