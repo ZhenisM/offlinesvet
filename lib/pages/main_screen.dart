@@ -49,6 +49,13 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _confirmLogout() async {
     bool? confirm = await showDialog(
       context: context,
+      // На iPad один и тот же тап иногда обрабатывается как два события:
+      // открытие диалога и практически сразу — тап по затемнённому фону
+      // (barrier), из-за чего диалог мгновенно закрывался сам, без явного
+      // нажатия "Отмена"/"Выйти" (на Android/эмуляторе так не происходило).
+      // barrierDismissible: false заодно и правильнее с точки зрения UX —
+      // подтверждение выхода не должно закрываться случайным тапом мимо.
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Text("Выход"),
         content: Text("Вы уверены, что хотите выйти?"),

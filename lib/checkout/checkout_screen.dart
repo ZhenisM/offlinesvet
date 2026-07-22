@@ -1152,9 +1152,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _FieldLabel(label: 'Менеджер клиента', required: true), const SizedBox(height: 6),
       _buildSelectGrid(items: _managers, selected: _manager, onSelect: (v) => setState(() => _manager = v)),
 
-      // ── Скрытые поля из HL-блока 45 (временно видимые для проверки) ─
-      const SizedBox(height: 24),
-      Container(
+      // ── Скрытые поля из HL-блока 45 ───────────────────────────────
+      // Раньше этот блок был временно видимым для проверки (жёлтая
+      // рамка "Скрытые поля 1С"). Логика заполнения (из map при выборе
+      // менеджера, см. выше) и отправки в create_order.php (см. _submit())
+      // не меняется — просто убираем блок из UI. Visibility(maintainState:
+      // true) не уничтожает контроллеры и их значения, только не рисует
+      // виджет и не занимает место на экране.
+      Visibility(
+        visible: false,
+        maintainState: true,
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: const Color(0xFFFFF9C4),
@@ -1188,6 +1196,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             onChanged: (i) => setState(() => _h1cBase1c = i == 1 ? 'base-1c-invest' : 'base-1c-aura'),
           ),
         ]),
+        ),
       ),
     ]);
   }

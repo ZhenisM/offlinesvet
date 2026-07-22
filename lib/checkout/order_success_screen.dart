@@ -50,17 +50,27 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen> {
       if (!mounted) return;
       setState(() => _generating = false);
 
-      // Открываем системное меню "Поделиться" — менеджер выбирает
-      // сохранить в файлы, отправить в WhatsApp/Telegram и т.д.
+      // На iPad системное меню "Поделиться" открывается как поповер, и iOS
+      // требует явно указать точку/область экрана, от которой он должен
+      // "вырасти" (sharePositionOrigin). На iPhone и Android этот параметр
+      // необязателен и без него всё работает — именно поэтому баг был виден
+      // только на iPad. Берём прямоугольник текущего экрана как origin.
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box != null ? (box.localToGlobal(Offset.zero) & box.size) : null;
+
       await Share.shareXFiles(
         [XFile(file.path)],
         text: 'КП для клиента ${widget.clientName}, заказ №${widget.orderId}',
+        sharePositionOrigin: origin,
       );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _generating = false;
-        _error = 'Не удалось создать КП. Проверьте интернет.';
+        // Раньше здесь был общий текст "Проверьте интернет" вне зависимости
+        // от реальной причины — из-за этого iPad-специфичная ошибка не была
+        // видна вообще. Показываем реальный текст исключения.
+        _error = 'Не удалось создать КП: $e';
       });
     }
   }
