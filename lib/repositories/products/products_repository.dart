@@ -85,24 +85,41 @@ class ProductsRepository {
   }
 
   Future<List<Product>> _loadFromCache(List<String> ids) async {
+    // Источник 1: узкий кэш "товары по ID" (SharedPreferences) — заполняется
+    // только когда товар уже показывался именно в корзине при интернете.
+    final found = <String, Product>{};
     try {
       final prefs = await SharedPreferences.getInstance();
       final existing = prefs.getString(_cacheKey);
-      if (existing == null) return [];
-      final cache = jsonDecode(existing) as Map<String, dynamic>;
-      final result = <Product>[];
-      for (final id in ids) {
-        if (cache.containsKey(id)) {
-          final map = jsonDecode(cache[id] as String) as Map<String, dynamic>;
-          result.add(Product.fromJson(map));
+      if (existing != null) {
+        final cache = jsonDecode(existing) as Map<String, dynamic>;
+        for (final id in ids) {
+          if (cache.containsKey(id)) {
+            final map = jsonDecode(cache[id] as String) as Map<String, dynamic>;
+            found[id] = Product.fromJson(map);
+          }
         }
       }
-      debugPrint('_loadFromCache: найдено ${result.length}/${ids.length} товаров');
-      return result;
     } catch (e) {
-      debugPrint('_loadFromCache: ошибка: $e');
-      return [];
+      debugPrint('_loadFromCache: ошибка чтения products_by_id_cache: $e');
     }
+
+    // Источник 2: общий кэш каталога (LocalDb/sqflite) — наполняется при
+    // обычном офлайн-просмотре разделов. Раньше сюда не заглядывали вообще,
+    // из-за чего товары, добавленные в корзину офлайн, но ни разу не
+    // показанные именно в корзине при интернете, оставались без
+    // названия/цены/картинки, даже если реально лежали в кэше каталога.
+    final missing = ids.where((id) => !found.containsKey(id)).toList();
+    if (missing.isNotEmpty) {
+      final fromCatalog = await LocalDb.loadProductsByIds(missing);
+      for (final p in fromCatalog) {
+        found[p.id] = p;
+      }
+    }
+
+    final result = ids.where(found.containsKey).map((id) => found[id]!).toList();
+    debugPrint('_loadFromCache: найдено ${result.length}/${ids.length} товаров (id-кэш + каталог)');
+    return result;
   }
 
   Future<List<Product>> getProductsByIds(List<String> ids) async {

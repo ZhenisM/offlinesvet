@@ -64,6 +64,19 @@ class _ClientCabinetScreenState extends State<ClientCabinetScreen> {
     return '${buf.toString()} ₸';
   }
 
+  // Иногда сервер отдаёт "сырое" значение Bitrix-свойства с флагом
+  // MULTIPLE=Y как есть из базы — это сериализованный PHP-массив вида
+  // 'a:0:{}' (пусто) или 'a:1:{i:0;s:...}' (есть значения). Правильно
+  // это должно разбираться на сервере в get_client_info.php, но здесь
+  // подстраховываемся на всякий случай, чтобы такой мусор никогда не
+  // долетел до пользователя, если сервер вернёт его.
+  String _cleanManagerName(dynamic raw) {
+    final s = raw?.toString().trim() ?? '';
+    if (s.isEmpty) return '—';
+    if (RegExp(r'^[aOs]:\d+:').hasMatch(s)) return '—';
+    return s;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -136,9 +149,7 @@ class _ClientCabinetScreenState extends State<ClientCabinetScreen> {
                       _InfoRow(label: 'Количество', value: '${deals['total_count'] ?? 0}'),
                       _InfoRow(
                         label: 'Последний менеджер',
-                        value: deals['last_manager']?.toString().isNotEmpty == true
-                            ? deals['last_manager'].toString()
-                            : '—',
+                        value: _cleanManagerName(deals['last_manager']),
                         isLast: true,
                       ),
                     ]),

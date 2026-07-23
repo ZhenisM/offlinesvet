@@ -48,6 +48,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
 
 
 # For information on the generic Dart part of this file, see the
@@ -87,3 +88,15 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Конфигурация пакета flutter_launcher_icons — запускается командой:
+#   flutter pub run flutter_launcher_icons
+# Сам файл assets/icons/app_icon.png нужно положить в проект — этот
+# конфиг только указывает, откуда его взять для генерации иконок
+# под iOS/Android.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  adaptive_icon_background: "#4CAF50"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"

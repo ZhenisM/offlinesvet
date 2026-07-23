@@ -176,6 +176,20 @@ class LocalDb {
     return rows.map(_productFromRow).toList();
   }
 
+  // Товары по списку ID — используется как офлайн-фолбэк для корзины:
+  // товар мог попасть в общий кэш каталога при обычном просмотре разделов,
+  // даже если он ни разу не показывался именно на экране корзины.
+  static Future<List<Product>> loadProductsByIds(List<String> ids) async {
+    if (ids.isEmpty) return [];
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await _database.query(
+      'products',
+      where: 'id IN ($placeholders)',
+      whereArgs: ids,
+    );
+    return rows.map(_productFromRow).toList();
+  }
+
   static Future<int> countProducts() async {
     final result = await _database.rawQuery('SELECT COUNT(*) as cnt FROM products');
     return result.first['cnt'] as int;
