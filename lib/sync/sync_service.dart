@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -136,9 +137,22 @@ class SyncService {
     final r = await _dio.post(
       '$_baseUrl/create_order.php',
       data: p,
-      options: Options(contentType: 'application/json',
-          responseType: ResponseType.plain),
+      options: Options(
+        contentType: 'application/json',
+        responseType: ResponseType.plain,
+        validateStatus: (status) => true,
+      ),
     );
-    return (r.statusCode ?? 0) == 200;
+
+    try {
+      final result = jsonDecode(r.data as String) as Map<String, dynamic>;
+      if (result['success'] != true) {
+        debugPrint('SyncService._createOrder: сервер отклонил заказ: ${result['error']}');
+      }
+      return result['success'] == true;
+    } catch (e) {
+      debugPrint('SyncService._createOrder: не удалось разобрать ответ: $e');
+      return false;
+    }
   }
 }

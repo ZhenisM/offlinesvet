@@ -1,14 +1,19 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/checkout/order_success_screen.dart';
+import 'package:offlinesvet/checkout/order_queued_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/cart/models/cart_model.dart';
+import 'package:offlinesvet/cart/cart_api_service_offline.dart';
 import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/checkout/order_data_service.dart';
+import 'package:offlinesvet/sync/offline_queue.dart';
 
 // -------------------------------------------------------
 // Модель купона (список купонов, только визуал)
@@ -352,6 +357,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  static const _couponRulesCacheKey = 'coupon_rules_cache';
+
   Future<void> _loadCouponGroups() async {
     setState(() => _couponsLoading = true);
     try {
@@ -359,7 +366,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         '$_baseUrl/coupon_rules.php',
         options: Options(responseType: ResponseType.plain),
       );
-      final json = jsonDecode(resp.data as String) as Map<String, dynamic>;
+      final raw = resp.data as String;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
       final groups = (json['groups'] as List? ?? [])
           .map((e) => CouponGroup.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -372,7 +380,34 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         if (investList.isNotEmpty) _investCoupons = investList;
         _couponsLoading = false;
       });
+      // Кэшируем для офлайн-режима (не ждём завершения).
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setString(_couponRulesCacheKey, raw),
+      );
     } catch (_) {
+      // Нет сети — пробуем последний успешно загруженный список купонов
+      // вместо того, чтобы оставить лист пустым (список купонов меняется
+      // редко, устаревший на день-два список всё равно полезнее пустого).
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString(_couponRulesCacheKey);
+        if (cached != null) {
+          final json = jsonDecode(cached) as Map<String, dynamic>;
+          final groups = (json['groups'] as List? ?? [])
+              .map((e) => CouponGroup.fromJson(e as Map<String, dynamic>))
+              .toList();
+          final investList = (json['invest_coupons'] as List? ?? [])
+              .map((e) => e.toString())
+              .toList();
+          if (!mounted) return;
+          setState(() {
+            _couponGroups = groups;
+            if (investList.isNotEmpty) _investCoupons = investList;
+            _couponsLoading = false;
+          });
+          return;
+        }
+      } catch (_) {}
       if (!mounted) return;
       setState(() => _couponsLoading = false);
     }
@@ -599,6 +634,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       final managerId = await CustomerStorage.currentManagerId();
       if (managerId == null) throw Exception('Не удалось определить менеджера');
 
+      // Корзины, целиком созданные офлайн, получают временный ID
+      // ('local_...') до тех пор, пока настоящий не придёт с сервера.
+      // Оформление заказа для них пока не поддержано (см. обсуждение
+      // про синхронизацию временных ID корзин) — просим подождать.
+      if (_cart.id.startsWith('local_')) {
+        setState(() {
+          _loading = false;
+          _error = 'Эта корзина ещё не синхронизирована с сервером. '
+              'Дождитесь подключения к интернету и повторите попытку.';
+        });
+        return;
+      }
+
       final props = _isLegal ? {
         '$_pCompany'      : _companyCtrl.text.trim(),
         '$_pCompanyFull'  : _companyFullCtrl.text.trim(),
@@ -643,17 +691,46 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       };
       props.removeWhere((_, v) => v == null || v == '' || (v is List && (v as List).isEmpty));
 
+      final payload = {
+        'manager_id'   : managerId,
+        'basket_id'    : int.parse(_cart.id),
+        'person_type'  : _isLegal ? 'legal' : 'physical',
+        'delivery_id'  : _deliveryId,
+        'delivery_cost': _deliveryCost,
+        'coupons'      : _selectedCoupons,
+        'props'        : props,
+      };
+
+      final hasNetwork = (await Connectivity().checkConnectivity())
+          .any((r) => r != ConnectivityResult.none);
+
+      if (!hasNetwork) {
+        // Ставим заказ в очередь — тот же QueueActionType.createOrder и
+        // тот же create_order.php, который SyncService уже умеет вызывать
+        // автоматически, как только появится интернет (см. sync_service.dart).
+        await OfflineQueue.enqueue(QueueActionType.createOrder, payload);
+
+        // Помечаем корзину как оформленную локально — тем же путём, что
+        // уже используется для остальных офлайн-изменений статуса корзины
+        // (локальное удаление из активных + постановка setStatus в очередь).
+        await CartApiServiceOffline(dio: Dio()).setCartStatus(
+          basketId: _cart.id,
+          status: CartStatus.completed,
+        );
+
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => OrderQueuedScreen(
+            clientName: _cart.clientInfo?['NAME']?.toString() ?? _cart.title,
+          )),
+          (_) => false,
+        );
+        return;
+      }
+
       final response = await _dio.post(
         '$_baseUrl/create_order.php',
-        data: jsonEncode({
-          'manager_id'   : managerId,
-          'basket_id'    : int.parse(_cart.id),
-          'person_type'  : _isLegal ? 'legal' : 'physical',
-          'delivery_id'  : _deliveryId,
-          'delivery_cost': _deliveryCost,
-          'coupons'      : _selectedCoupons,
-          'props'        : props,
-        }),
+        data: jsonEncode(payload),
         options: Options(
           contentType: 'application/json',
           responseType: ResponseType.plain,

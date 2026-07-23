@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Данные одного варианта свойства (ENUM)
 class PropVariant {
@@ -120,6 +121,9 @@ class OrderDataService {
 
   OrderDataService({Dio? dio}) : _dio = dio ?? Dio();
 
+  static String _managerPropsCacheKey(int managerId) =>
+      'manager_1c_props_cache_$managerId';
+
   Future<ManagerProps> loadManagerProps(int managerId) async {
     try {
       final response = await _dio.get(
@@ -127,21 +131,61 @@ class OrderDataService {
         queryParameters: {'manager_id': managerId},
         options: Options(responseType: ResponseType.plain),
       );
-      final json = jsonDecode(response.data as String) as Map<String, dynamic>;
+      final raw = response.data as String;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
       if (json['success'] == true) {
+        // Кэшируем сырой ответ для офлайн-режима (не ждём завершения).
+        SharedPreferences.getInstance().then(
+          (prefs) => prefs.setString(_managerPropsCacheKey(managerId), raw),
+        );
         return ManagerProps.fromJson(json);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Нет сети или сервер недоступен — пробуем прошлый успешный ответ
+      // для этого же менеджера вместо того, чтобы молча вернуть пустоту.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString(_managerPropsCacheKey(managerId));
+        if (cached != null) {
+          final json = jsonDecode(cached) as Map<String, dynamic>;
+          return ManagerProps.fromJson(json);
+        }
+      } catch (_) {}
+    }
     return ManagerProps.empty();
   }
 
-  Future<OrderData> load() async {
-    final response = await _dio.get(
-      '$_baseUrl/get_order_data.php',
-      options: Options(responseType: ResponseType.plain),
-    );
+  static const _orderDataCacheKey = 'order_data_cache';
 
-    final json = jsonDecode(response.data as String) as Map<String, dynamic>;
+  Future<OrderData> load() async {
+    String raw;
+    try {
+      final response = await _dio.get(
+        '$_baseUrl/get_order_data.php',
+        options: Options(responseType: ResponseType.plain),
+      );
+      raw = response.data as String;
+      // Кэшируем сырой ответ для офлайн-режима (не ждём завершения).
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setString(_orderDataCacheKey, raw),
+      );
+    } catch (e) {
+      // Нет сети — пробуем последний успешно загруженный набор данных
+      // (способы доставки, варианты статусов и т.п.), вместо того чтобы
+      // блокировать весь экран оформления заказа ошибкой без возможности
+      // продолжить работу офлайн.
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_orderDataCacheKey);
+      if (cached == null) {
+        // Данных вообще никогда не было (первый запуск офлайн, до этого
+        // ни разу не было интернета) — тут действительно нечем работать,
+        // показываем исходную ошибку как раньше.
+        rethrow;
+      }
+      raw = cached;
+    }
+
+    final json = jsonDecode(raw) as Map<String, dynamic>;
 
     // Службы доставки
     final deliveries = (json['deliveries'] as List<dynamic>)
