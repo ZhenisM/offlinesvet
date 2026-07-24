@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
+import 'package:offlinesvet/repositories/products/local_db.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -50,12 +52,26 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce = Timer(const Duration(milliseconds: 400), () => _search(q));
   }
 
+  Future<bool> _hasInternet() async {
+    final result = await Connectivity().checkConnectivity();
+    return result.any((r) => r != ConnectivityResult.none);
+  }
+
   Future<void> _search(String q) async {
     q = q.trim();
     if (q.length < 2 || q == _lastQuery) return;
     _lastQuery = q;
 
     setState(() { _loading = true; _error = null; });
+
+    if (!await _hasInternet()) {
+      // Нет сети — сразу ищем в закэшированном офлайн-каталоге, не тратя
+      // время на заведомо обречённый сетевой запрос.
+      final list = await LocalDb.searchProducts(q, limit: 30);
+      if (!mounted) return;
+      setState(() { _results = list; _loading = false; });
+      return;
+    }
 
     try {
       final response = await _dio.get(
@@ -69,7 +85,18 @@ class _SearchScreenState extends State<SearchScreen> {
           .toList();
       setState(() { _results = list; _loading = false; });
     } catch (e) {
-      setState(() { _error = 'Не удалось выполнить поиск'; _loading = false; });
+      // Сеть была, но запрос не удался (обрыв связи посреди запроса,
+      // сервер недоступен и т.п.) — тоже пробуем офлайн-каталог вместо
+      // того, чтобы просто показать ошибку.
+      debugPrint('_search: сетевой поиск не удался ($e), пробуем офлайн-каталог');
+      try {
+        final list = await LocalDb.searchProducts(q, limit: 30);
+        if (!mounted) return;
+        setState(() { _results = list; _loading = false; });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() { _error = 'Не удалось выполнить поиск'; _loading = false; });
+      }
     }
   }
 

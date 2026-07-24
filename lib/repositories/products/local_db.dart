@@ -17,7 +17,7 @@ class LocalDb {
 
     _db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE sections (
@@ -39,6 +39,7 @@ class LocalDb {
             image TEXT,
             prices_json TEXT NOT NULL,
             props_json TEXT NOT NULL,
+            search_text TEXT,
             saved_at INTEGER NOT NULL
           )
         ''');
@@ -46,6 +47,36 @@ class LocalDb {
         await db.execute(
           'CREATE INDEX idx_products_section ON products(section_id)',
         );
+        await db.execute(
+          'CREATE INDEX idx_products_search ON products(search_text)',
+        );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          // Добавляем поле для офлайн-поиска. Оно хранит уже приведённый
+          // к нижнему регистру текст (регистр приводим в Dart — toLowerCase()
+          // корректно работает с кириллицей, а встроенный LIKE в SQLite
+          // по умолчанию складывает регистр только для ASCII).
+          await db.execute('ALTER TABLE products ADD COLUMN search_text TEXT');
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_products_search ON products(search_text)',
+          );
+
+          // Заполняем search_text для товаров, уже сохранённых до этого
+          // обновления (иначе они не найдутся поиском, пока их не
+          // пересохранят при следующей синхронизации).
+          final rows = await db.query('products', columns: ['id', 'name', 'brend', 'article']);
+          final batch = db.batch();
+          for (final row in rows) {
+            final text = [row['name'], row['brend'], row['article']]
+                .where((e) => e != null && e.toString().isNotEmpty)
+                .map((e) => e.toString().toLowerCase())
+                .join(' ');
+            batch.update('products', {'search_text': text},
+                where: 'id = ?', whereArgs: [row['id']]);
+          }
+          await batch.commit(noResult: true);
+        }
       },
     );
 
@@ -133,11 +164,16 @@ class LocalDb {
   // Товары
   // -------------------------------------------------------
 
-  static Future<void> saveProducts(List<Product> products) async {
+  static Future<void> saveProducts(List<Product> products, {int? savedAt}) async {
     final batch = _database.batch();
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = savedAt ?? DateTime.now().millisecondsSinceEpoch;
 
     for (final p in products) {
+      final searchText = [p.name, p.brend, p.article]
+          .where((e) => e != null && e.isNotEmpty)
+          .map((e) => e!.toLowerCase())
+          .join(' ');
+
       batch.insert(
         'products',
         {
@@ -158,6 +194,7 @@ class LocalDb {
             'CODE': prop.code,
             'VALUE': prop.value,
           }))),
+          'search_text': searchText,
           'saved_at': now,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
@@ -165,6 +202,37 @@ class LocalDb {
     }
 
     await batch.commit(noResult: true);
+  }
+
+  // Офлайн-поиск по названию/бренду/артикулу — используется в
+  // search_screen.dart как фолбэк, когда search_products.php недоступен.
+  // Ищем по предвычисленному search_text (уже в нижнем регистре), а не
+  // через `LIKE ... COLLATE NOCASE` — тот не складывает регистр кириллицы.
+  static Future<List<Product>> searchProducts(String query, {int limit = 30}) async {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return [];
+
+    final rows = await _database.query(
+      'products',
+      where: 'search_text LIKE ?',
+      whereArgs: ['%$q%'],
+      limit: limit,
+    );
+    return rows.map(_productFromRow).toList();
+  }
+
+  // Удаляет товары, не подтверждённые последним ПОЛНЫМ обходом каталога
+  // (т.е. сняты с продажи / больше не ACTIVE в Bitrix) — иначе такие
+  // товары остались бы в офлайн-кэше навсегда. Вызывать только после
+  // того, как полный обход прошёл успешно от первой до последней страницы —
+  // если прервать синхронизацию на середине и вызвать это, можно случайно
+  // удалить ещё вполне активные товары, до которых просто не успели дойти.
+  static Future<int> deleteStaleProducts({required int before}) async {
+    return _database.delete(
+      'products',
+      where: 'saved_at < ?',
+      whereArgs: [before],
+    );
   }
 
   static Future<List<Product>> loadProductsBySection(String sectionId) async {

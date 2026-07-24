@@ -3,6 +3,7 @@ import 'package:offlinesvet/auth/auth_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/view/new_customer_dialog.dart';
 import 'package:offlinesvet/customer/view/search_customer_screen.dart';
+import 'package:offlinesvet/repositories/products/catalog_sync_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -19,6 +20,19 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _loadActiveCustomer();
+    _maybeSyncCatalog();
+  }
+
+  // Полная фоновая синхронизация каталога — не чаще раза в сутки (см.
+  // CatalogSyncService.shouldSync()), не блокирует экран: если каталог
+  // уже синхронизировался недавно, ничего не произойдёт; если давно
+  // (или никогда) — тихо начнёт скачивать в фоне, экран продолжает
+  // работать как обычно.
+  Future<void> _maybeSyncCatalog() async {
+    final syncService = CatalogSyncService();
+    if (await syncService.shouldSync()) {
+      syncService.syncFullCatalog();
+    }
   }
 
   Future<void> _loadActiveCustomer() async {
