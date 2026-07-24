@@ -235,13 +235,69 @@ class LocalDb {
     );
   }
 
-  static Future<List<Product>> loadProductsBySection(String sectionId) async {
+  // ВАЖНО: раньше этот метод не имел ограничения по количеству строк —
+  // для маленьких разделов (сотня-другая товаров, пока кэш наполнялся
+  // только вручную просмотренными страницами) это было не страшно. После
+  // полной синхронизации каталога в некоторых разделах (например,
+  // "Люстры") оказались ТЫСЯЧИ товаров, и попытка вытащить их все одним
+  // запросом роняла приложение с OutOfMemoryError прямо на границе
+  // Flutter <-> Android (слишком большой единоразовый пакет данных).
+  // Теперь поддерживает limit/offset — вызывающий код сам решает, сколько
+  // грузить за раз.
+  static Future<List<Product>> loadProductsBySection(
+    String sectionId, {
+    int? limit,
+    int? offset,
+  }) async {
     final rows = await _database.query(
       'products',
       where: 'section_id = ?',
       whereArgs: [sectionId],
+      orderBy: 'id ASC',
+      limit: limit,
+      offset: offset,
     );
     return rows.map(_productFromRow).toList();
+  }
+
+  // Товары сразу из НЕСКОЛЬКИХ разделов (раздел + все подразделы) одним
+  // SQL-запросом с limit/offset — используется вместо того, чтобы делать
+  // Future.wait по каждому разделу отдельно и потом склеивать в Dart:
+  // так СУБД сама уже отдаёт нужную порцию, а не всё целиком.
+  static Future<List<Product>> loadProductsForSections(
+    List<String> sectionIds, {
+    int? limit,
+    int? offset,
+  }) async {
+    if (sectionIds.isEmpty) return [];
+    final placeholders = List.filled(sectionIds.length, '?').join(',');
+    final rows = await _database.query(
+      'products',
+      where: 'section_id IN ($placeholders)',
+      whereArgs: sectionIds,
+      orderBy: 'id ASC',
+      limit: limit,
+      offset: offset,
+    );
+    return rows.map(_productFromRow).toList();
+  }
+
+  // Для случаев, когда реально нужны ВСЕ товары раздела целиком (построение
+  // фильтров, офлайн-фильтрация) — читаем порциями по [batchSize], а не
+  // одним огромным запросом, чтобы не повторить тот же OutOfMemoryError.
+  static Future<List<Product>> loadAllProductsForSectionsBatched(
+    List<String> sectionIds, {
+    int batchSize = 500,
+  }) async {
+    final all = <Product>[];
+    int offset = 0;
+    while (true) {
+      final batch = await loadProductsForSections(sectionIds, limit: batchSize, offset: offset);
+      all.addAll(batch);
+      if (batch.length < batchSize) break;
+      offset += batchSize;
+    }
+    return all;
   }
 
   // Товары по списку ID — используется как офлайн-фолбэк для корзины:

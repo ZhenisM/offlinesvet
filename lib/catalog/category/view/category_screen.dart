@@ -309,7 +309,21 @@ class _CategoryScreenState extends State<CategoryScreen> {
     } catch (e, st) {
       debugPrint('_loadFilters ERROR: $e');
       debugPrint('$st');
-      if (mounted) setState(() => _filtersLoaded = true);
+      // Нет сети (или сервер недоступен) — строим варианты фильтра из
+      // уже закэшированных товаров этого раздела вместо того, чтобы
+      // просто оставить кнопку "Фильтры" неактивной навсегда.
+      try {
+        final offline = await _repository.buildOfflineFilterDefs(widget.section);
+        if (!mounted) return;
+        setState(() {
+          _filterDefs = offline.filters;
+          _priceRange = offline.priceRange;
+          _filtersLoaded = true;
+        });
+      } catch (e2) {
+        debugPrint('_loadFilters офлайн-фолбэк тоже не удался: $e2');
+        if (mounted) setState(() => _filtersLoaded = true);
+      }
     }
   }
 
@@ -368,7 +382,23 @@ class _CategoryScreenState extends State<CategoryScreen> {
         _loading = false;
       });
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      // Нет сети (или сервер недоступен) — применяем те же фильтры локально
+      // к уже закэшированным товарам раздела, вместо того чтобы просто
+      // показать ошибку.
+      debugPrint('_applyFilters: сеть не удалась ($e), пробуем офлайн-фильтрацию');
+      try {
+        final list = await _repository.applyFiltersOffline(widget.section, _activeFilters);
+        if (!mounted) return;
+        setState(() {
+          _products
+            ..clear()
+            ..addAll(list);
+          _hasMore = false; // офлайн — сразу все подходящие товары, без пагинации
+          _loading = false;
+        });
+      } catch (e2) {
+        if (mounted) setState(() { _error = e2.toString(); _loading = false; });
+      }
     }
   }
 

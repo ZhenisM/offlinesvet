@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/repositories/products/local_db.dart';
+import 'package:offlinesvet/catalog/filter/filter_screen.dart';
 
 const String _baseUrl = 'https://prons.kz/ajax/offlinesvet';
 
@@ -163,6 +165,25 @@ class ProductsRepository {
   // -------------------------------------------------------
   // собрать товары из всех дочерних секций
   // -------------------------------------------------------
+  // ВАЖНО: раньше грузило ВСЕ товары раздела разом (Future.wait по
+  // каждой подсекции без ограничения) — для маленьких разделов это было
+  // незаметно, но после полной синхронизации каталога некоторые разделы
+  // (например, "Люстры") содержат тысячи товаров, и такой единоразовый
+  // запрос ронял приложение с OutOfMemoryError на границе Flutter/Android.
+  // Теперь поддерживает limit/offset через один комбинированный SQL-запрос.
+  Future<List<Product>> _loadCachedProductsForSection(
+    int sectionId,
+    Section? section, {
+    int? limit,
+    int? offset,
+  }) async {
+    final sectionIds = (section != null && section.children.isNotEmpty)
+        ? _collectSectionIds(section)
+        : [sectionId.toString()];
+    debugPrint('_loadCachedProductsForSection: секции ${sectionIds.length}, limit=$limit offset=$offset');
+    return LocalDb.loadProductsForSections(sectionIds, limit: limit, offset: offset);
+  }
+
   Future<({List<Product> products, bool hasMore})> getProducts({
     required int sectionId,
     int page = 1,
@@ -172,21 +193,14 @@ class ProductsRepository {
     final online = await _hasInternet();
 
     if (!online) {
-      debugPrint('getProducts: offline, читаем из кэша sectionId=$sectionId');
-
-      List<Product> cached;
-      if (section != null && section.children.isNotEmpty) {
-        // Собираем товары из всех вложенных секций
-        final allIds = _collectSectionIds(section);
-        debugPrint('getProducts: офлайн, собираем из ${allIds.length} секций: $allIds');
-        final futures = allIds.map((id) => LocalDb.loadProductsBySection(id));
-        final results = await Future.wait(futures);
-        cached = results.expand((list) => list).toList();
-      } else {
-        cached = await LocalDb.loadProductsBySection(sectionId.toString());
-      }
-
-      return (products: cached, hasMore: false);
+      debugPrint('getProducts: offline, читаем из кэша sectionId=$sectionId page=$page');
+      final cached = await _loadCachedProductsForSection(
+        sectionId, section,
+        limit: limit, offset: (page - 1) * limit,
+      );
+      // Как и на сервере: если пришла полная страница — считаем, что
+      // дальше может быть ещё (без лишнего COUNT(*) по всем подсекциям).
+      return (products: cached, hasMore: cached.length == limit);
     }
 
     try {
@@ -221,18 +235,157 @@ class ProductsRepository {
       );
     } catch (e) {
       debugPrint('getProducts: ошибка сети, читаем из кэша: $e');
+      final cached = await _loadCachedProductsForSection(
+        sectionId, section,
+        limit: limit, offset: (page - 1) * limit,
+      );
+      return (products: cached, hasMore: cached.length == limit);
+    }
+  }
 
-      List<Product> cached;
-      if (section != null && section.children.isNotEmpty) {
-        final allIds = _collectSectionIds(section);
-        final futures = allIds.map((id) => LocalDb.loadProductsBySection(id));
-        final results = await Future.wait(futures);
-        cached = results.expand((list) => list).toList();
-      } else {
-        cached = await LocalDb.loadProductsBySection(sectionId.toString());
+  // -------------------------------------------------------
+  // Фильтры — офлайн-замена get_filters.php / get_products_filtered.php
+  // -------------------------------------------------------
+
+  // Те же коды, что в get_filters.php на сервере. Список ДЛИННЕЕ, чем
+  // skipCodes в get_products.php/get_products_full.php — то есть эти
+  // свойства МОГУТ присутствовать в закэшированных props у товара, но не
+  // должны предлагаться как варианты фильтра (сервер их тоже скрывает).
+  static const _filterSkipCodes = {
+    'CML2_BAR_CODE','CML2_TRAITS','CML2_BASE_UNIT','CML2_TAXES',
+    'CML2_MANUFACTURER','CML2_ARTICLE','MORE_PHOTO','FILES',
+    'ANALOGI_NE_S_1S','ANALOGI_TOVARA','IDENTIFIKATORNOMENKLATURY',
+    'IDENTIFIKATOR_NA_SAYTE','BLOG_POST_ID','BLOG_COMMENTS_CNT',
+    'vote_count','vote_sum','rating','GOLOSOVANIE_OTSENKA',
+    'GOLOSOVANIE_KOLICHESTVO_GOLOSOV','SORTIROVKA','AUTOSORT_TEST',
+    'AUTOSORT_TEST_LAMP','AUTOSORT_ACTION','AUTOSORT_NOVINKI',
+    'AUTOSORT_BRAND','POKAZYVAT_NA_GLAVNOY','VYVODIT_V_POPULYARNYKH_TOVARAKH',
+    'SKLAD','KOD_OZON','KOD_TNVED','BUF','_AVS_ANALIZ',
+    'KOEFFITSIENT_PO_KHRANENIYU_KOROBOK','STARAYA_TSENA',
+    'SROK_OKONCHANIYA_AKTSII','PRICHINA_UTSENKI','GRUPPA_ANALOGOV',
+    'SKIDKA_ORYNBOR','MINIMALNAYA_TSENA','KUPIT_V_CREDIT','KUPIT_V_KREDIT',
+    'AVTOMATICHESKAYA_SORTIROVKA','DATA_OBNOVLENIYA_IZOBRAZHENIY',
+    'METKI_','METKI','_RASPRODAZHA','_NALICHIYE___','MAYTONI_B2B_AVAILABILITY',
+    'NOVINKA_FIDA','K123','FAYLY_PNG','FAYLY_INTERERA','FAYLY_ZHIVYE_FOTO',
+    'INSTRUKCIA','VIDEO_ROLIK','KOD_NOMENKLATURY','KOD_STRANY_DLYA_SHTRIKHKODOV',
+    'STARYY_ARTIKUL','NOVOE_NAIMENOVANIE','SERTIFIKAT','OSTATOK','VIDIMOST',
+    'GARANTIYA','VES','SHIRINA_UPAKOVKI_SM','DLINA_UPAKOVKI_SM',
+    'VYSOTA_UPAKOVKI_SM','RAZDEL_NA_SAYTE','KATEGORIYATOVARA','VYSOTA_MM_1',
+    'MATERIALY_SVETILNIKA',
+  };
+
+  // Те же коды, что в get_filters.php — свойства-"диапазоны" (мм/Вт/шт),
+  // а не списки конкретных значений.
+  static const _filterRangeCodes = {
+    'DLINA_MM','SHIRINA_MM','VYSOTA_MM','DIAMETR_MM','GLUBINA_MM',
+    'DLINA_SHNURA_M','PLOSHCHAD_OSVESHCHENIYA',
+    'OBSHCHAYA_MOSHCHNOST_SVETILNIKA_W','MOSHCHNOST_LAMPY_W','KOLICHESTVO_LAMP',
+  };
+
+  static const _filterSortPriority = {
+    'BREND': 0, 'STIL': 1, 'TSVET_ARMATURY': 2, 'TSVET_PLAFONOV': 3,
+  };
+
+  /// Строит определения фильтров (диапазон цены + список вариантов по
+  /// каждому свойству) из уже закэшированных офлайн товаров раздела —
+  /// офлайн-замена get_filters.php. Работает только с тем, что уже есть
+  /// в LocalDb (полная синхронизация каталога / просмотренные разделы).
+  Future<({RangeValues priceRange, List<FilterDef> filters})> buildOfflineFilterDefs(Section section) async {
+    final sectionIds = section.children.isNotEmpty
+        ? _collectSectionIds(section)
+        : [section.id];
+    final products = await LocalDb.loadAllProductsForSectionsBatched(sectionIds);
+
+    double priceMin = 0, priceMax = 0;
+    bool priceSet = false;
+    final listValues = <String, Set<String>>{};
+    final propNames = <String, String>{};
+    final rangeMin = <String, double>{};
+    final rangeMax = <String, double>{};
+
+    for (final p in products) {
+      for (final price in p.prices) {
+        if (price.typeId != '1') continue;
+        final v = price.price;
+        if (v <= 0) continue;
+        if (!priceSet || v < priceMin) priceMin = v;
+        if (!priceSet || v > priceMax) priceMax = v;
+        priceSet = true;
       }
 
-      return (products: cached, hasMore: false);
+      for (final entry in p.props.entries) {
+        final code = entry.key;
+        if (_filterSkipCodes.contains(code)) continue;
+        final value = entry.value.value.trim();
+        if (value.isEmpty) continue;
+        propNames.putIfAbsent(code, () => entry.value.name);
+
+        if (_filterRangeCodes.contains(code)) {
+          final n = double.tryParse(value);
+          if (n == null || n <= 0) continue;
+          if (!rangeMin.containsKey(code) || n < rangeMin[code]!) rangeMin[code] = n;
+          if (!rangeMax.containsKey(code) || n > rangeMax[code]!) rangeMax[code] = n;
+        } else {
+          (listValues[code] ??= <String>{}).add(value);
+        }
+      }
     }
+
+    final filters = <FilterDef>[];
+    listValues.forEach((code, values) {
+      if (values.isEmpty) return;
+      final sorted = values.toList()..sort();
+      filters.add(FilterDef(code: code, name: propNames[code] ?? code, type: 'list', values: sorted));
+    });
+    rangeMax.forEach((code, mx) {
+      final mn = rangeMin[code] ?? 0;
+      if (mx <= 0 || mx < mn) return;
+      filters.add(FilterDef(code: code, name: propNames[code] ?? code, type: 'range', min: mn, max: mx));
+    });
+
+    filters.sort((a, b) =>
+        (_filterSortPriority[a.code] ?? 99).compareTo(_filterSortPriority[b.code] ?? 99));
+
+    debugPrint('buildOfflineFilterDefs: ${filters.length} фильтров из ${products.length} товаров');
+
+    return (
+      priceRange: RangeValues(priceSet ? priceMin : 0, priceSet ? priceMax : 0),
+      filters: filters,
+    );
+  }
+
+  /// Применяет уже выбранные фильтры локально к товарам раздела — офлайн-
+  /// замена get_products_filtered.php. Возвращает сразу все подходящие
+  /// товары (без серверной пагинации — офлайн-датасет на раздел разумного
+  /// размера, догружать постранично не требуется).
+  Future<List<Product>> applyFiltersOffline(Section section, ActiveFilters filters) async {
+    final sectionIds = section.children.isNotEmpty
+        ? _collectSectionIds(section)
+        : [section.id];
+    final products = await LocalDb.loadAllProductsForSectionsBatched(sectionIds);
+
+    return products.where((p) {
+      if (filters.price != null) {
+        final hasMatchingPrice = p.prices.any((price) =>
+            price.typeId == '1' &&
+            price.price >= filters.price!.start &&
+            price.price <= filters.price!.end);
+        if (!hasMatchingPrice) return false;
+      }
+
+      for (final entry in filters.ranges.entries) {
+        final propValue = p.props[entry.key]?.value;
+        final n = propValue == null ? null : double.tryParse(propValue);
+        if (n == null || n < entry.value.start || n > entry.value.end) return false;
+      }
+
+      for (final entry in filters.props.entries) {
+        if (entry.value.isEmpty) continue;
+        final propValue = p.props[entry.key]?.value;
+        if (propValue == null || !entry.value.contains(propValue)) return false;
+      }
+
+      return true;
+    }).toList();
   }
 }
