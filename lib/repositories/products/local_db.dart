@@ -17,13 +17,14 @@ class LocalDb {
 
     _db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE sections (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             parent_id TEXT,
+            image TEXT,
             children_json TEXT NOT NULL,
             saved_at INTEGER NOT NULL
           )
@@ -77,6 +78,15 @@ class LocalDb {
           }
           await batch.commit(noResult: true);
         }
+
+        if (oldVersion < 3) {
+          // Картинка раздела — подтягивается из Bitrix (PICTURE секции).
+          // У уже закэшированных ранее разделов её просто не будет, пока
+          // не пройдёт следующая обычная загрузка списка разделов
+          // (getSections()) — это не критично, разделы и так продолжат
+          // отображаться, просто временно без картинки слева.
+          await db.execute('ALTER TABLE sections ADD COLUMN image TEXT');
+        }
       },
     );
 
@@ -103,6 +113,7 @@ class LocalDb {
           'id': s.id,
           'name': s.name,
           'parent_id': s.parentId,
+          'image': s.image,
           'children_json': jsonEncode(s.children.map(_sectionToMap).toList()),
           'saved_at': now,
         },
@@ -133,6 +144,7 @@ class LocalDb {
         id: row['id'] as String,
         name: row['name'] as String,
         parentId: row['parent_id'] as String?,
+        image: row['image'] as String?,
         children: [], // заполним ниже
       );
     }
@@ -327,6 +339,7 @@ class LocalDb {
     'ID': s.id,
     'NAME': s.name,
     'PARENT_ID': s.parentId,
+    'IMAGE': s.image,
     'CHILDREN': s.children.map(_sectionToMap).toList(),
   };
 

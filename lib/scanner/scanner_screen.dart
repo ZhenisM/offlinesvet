@@ -7,7 +7,7 @@ import 'package:offlinesvet/repositories/products/models/product.dart';
 
 const String _baseUrl = 'https://prons.kz/ajax/offlinesvet';
 
-/// Сканер штрихкодов — аналог компонента saryal:barcode_scanner на сайте.
+/// Сканер штрихкодов — аналог компонента barcode_scanner на сайте.
 /// В отличие от сайта (который декодирует штрихкод в браузере через
 /// QuaggaJS), тут декодирование делает нативная библиотека прямо на
 /// устройстве (ML Kit) — сервер нужен только для поиска товара по уже
@@ -34,7 +34,14 @@ class _ScannerScreenState extends State<ScannerScreen> {
   );
 
   bool _busy = false; // идёт запрос на сервер — игнорируем новые кадры
-  String? _lastCode; // защита от повторной обработки одного и того же кадра подряд
+
+  // Раньше тут была защита только "не тот же код, что в прошлый раз",
+  // но она сбрасывалась сразу после обработки — а следующий кадр камеры
+  // почти всегда показывает тот же штрихкод (пользователь ещё держит
+  // камеру на месте), поэтому срабатывало по несколько раз подряд.
+  // Теперь — настоящая пауза по времени после каждого срабатывания.
+  DateTime? _cooldownUntil;
+  static const _cooldown = Duration(seconds: 3);
 
   @override
   void dispose() {
@@ -44,10 +51,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_busy) return;
-    final code = capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
-    if (code == null || code.isEmpty || code == _lastCode) return;
+    if (_cooldownUntil != null && DateTime.now().isBefore(_cooldownUntil!)) return;
 
-    _lastCode = code;
+    final code = capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
+    if (code == null || code.isEmpty) return;
+
     setState(() => _busy = true);
     await _controller.stop();
 
@@ -73,8 +81,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
       // работает только онлайн (так же, как на сайте).
       _showNotFound('Нет соединения с сервером. Проверьте интернет и попробуйте снова.');
     } finally {
+      // Пауза начинает отсчитываться именно с этого момента — то есть
+      // после того, как пользователь мог полистать карточку товара и
+      // вернуться, счётчик не "сгорел" впустую, пока сканер был неактивен.
+      _cooldownUntil = DateTime.now().add(_cooldown);
       if (mounted) setState(() => _busy = false);
-      _lastCode = null;
       await _controller.start();
     }
   }

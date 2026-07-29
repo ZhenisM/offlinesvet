@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
+import 'package:offlinesvet/catalog/widgets/category_thumbnail.dart';
 import 'package:offlinesvet/catalog/category/view/category_screen.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
@@ -82,38 +83,47 @@ class _ProductListScreenState extends State<ProductListScreen> {
             ],
           ),
         ),
-        (List<Section> sections, _) => ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: sections.length + 1,
-          separatorBuilder: (_, __) => const Divider(),
-          itemBuilder: (context, i) {
-            if (i == 0) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+        (List<Section> sections, _) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
                 child: Text(
                   'Категории',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
-              );
-            }
-            final section = sections[i - 1];
-            return ListTile(
-              title: Text(section.name),
-              trailing: const Icon(Icons.arrow_forward_ios),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CategoryScreen(
-                      section: section,
-                      allProducts: const [], // товары грузятся внутри CategoryScreen
-                      allSections: sections,
-                    ),
-                  ),
-                );
-              },
-            );
-          },
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: sections.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: Colors.grey.shade100),
+                itemBuilder: (context, i) {
+                  final section = sections[i];
+                  return ListTile(
+                    leading: CategoryThumbnail(imageUrl: section.image),
+                    title: Text(section.name),
+                    trailing: Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey.shade400),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CategoryScreen(
+                            section: section,
+                            allProducts: const [], // товары грузятся внутри CategoryScreen
+                            allSections: sections,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
         ),
         _ => const SizedBox.shrink(),
       },

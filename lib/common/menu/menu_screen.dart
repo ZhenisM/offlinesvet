@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:offlinesvet/catalog/category/view/category_screen.dart';
+import 'package:offlinesvet/catalog/widgets/category_thumbnail.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 
 class MenuScreen extends StatelessWidget {
@@ -60,6 +61,7 @@ class MenuScreen extends StatelessWidget {
               itemBuilder: (ctx, i) {
                 final section = sections[i];
                 return ListTile(
+                  leading: CategoryThumbnail(imageUrl: section.image, size: 36),
                   title: Text(section.name,
                     style: const TextStyle(fontSize: 15)),
                   trailing: const Icon(Icons.arrow_forward_ios,
@@ -141,7 +143,7 @@ class MenuScreen extends StatelessWidget {
   }
 
   Widget _divider() =>
-      const Divider(height: 1, indent: 16, endIndent: 16);
+      Divider(height: 1, color: Colors.grey.shade100, indent: 16, endIndent: 16);
 }
 
 class _MenuItem extends StatelessWidget {

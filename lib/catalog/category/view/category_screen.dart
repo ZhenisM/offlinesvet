@@ -12,6 +12,7 @@ import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:offlinesvet/catalog/favorites/favorites_screen.dart';
 import 'package:offlinesvet/catalog/compare/compare_screen.dart';
+import 'package:offlinesvet/catalog/widgets/category_thumbnail.dart';
 
 class CategoryScreen extends StatefulWidget {
   final Section section;
@@ -224,6 +225,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                 (context, i) {
                   final child = widget.section.children[i];
                   return ListTile(
+                    leading: CategoryThumbnail(imageUrl: child.image),
                     title: Text(child.name),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () => Navigator.push(
