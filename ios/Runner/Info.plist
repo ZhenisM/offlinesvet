@@ -49,5 +49,7 @@
 	<string>Используется для быстрого входа в приложение вместо пароля</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Используется для сканирования штрихкода товара</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Используется для записи разговора с клиентом</string>
 </dict>
 </plist>

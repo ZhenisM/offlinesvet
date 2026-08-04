@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/customer/models/customer_model.dart';
 
 /// Базовый URL входящего вебхука Bitrix24.
@@ -220,10 +221,72 @@ class BitrixService {
       );
 
       final data = _unwrapResult(response);
-      return data['result'].toString();
+      final leadId = data['result'].toString();
+
+      // Запоминаем ID только что созданного лида — отдельная кнопка
+      // "Записать разговор" (вне анкеты) использует это значение, чтобы
+      // прикрепить запись именно к этому лиду, даже если запись
+      // закончится позже, чем сохранится сама анкета.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_lead_id', leadId);
+      await prefs.setInt('last_lead_created_at', DateTime.now().millisecondsSinceEpoch);
+
+      return leadId;
     } on DioException catch (e) {
       debugPrint('createLead: ошибка сети: $e');
       throw BitrixApiException('Не удалось создать лид в Bitrix');
+    }
+  }
+
+  /// Последний созданный лид (для привязки записи разговора). Возвращает
+  /// null, если лида ещё не было или он был создан слишком давно
+  /// (maxAge) — на случай если менеджер забыл остановить старую запись.
+  static Future<String?> getLastLeadId({Duration maxAge = const Duration(hours: 3)}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final leadId = prefs.getString('last_lead_id');
+    final createdAtMs = prefs.getInt('last_lead_created_at');
+    if (leadId == null || createdAtMs == null) return null;
+
+    final createdAt = DateTime.fromMillisecondsSinceEpoch(createdAtMs);
+    if (DateTime.now().difference(createdAt) > maxAge) return null;
+
+    return leadId;
+  }
+
+  // -------------------------------------------------------
+  // Запись разговора
+  // -------------------------------------------------------
+
+  /// Прикрепляет аудиофайл записи разговора как комментарий с файлом
+  /// к указанному лиду (crm.timeline.comment.add с полем FILES).
+  /// Хранения записей на сервере сайта нет — файл целиком уходит в Bitrix.
+  Future<void> attachRecordingToLead({
+    required String leadId,
+    required String base64Content,
+    required String filename,
+    String comment = 'Запись разговора с клиентом (из мобильного приложения)',
+  }) async {
+    await _requireInternet();
+
+    try {
+      final response = await dio.post(
+        '$_bitrixWebhookUrl/crm.timeline.comment.add.json',
+        data: {
+          'fields': {
+            'ENTITY_ID': leadId,
+            'ENTITY_TYPE': 'lead',
+            'COMMENT': comment,
+            'FILES': [
+              [filename, base64Content],
+            ],
+          },
+        },
+      );
+
+      _unwrapResult(response);
+    } on DioException catch (e) {
+      debugPrint('attachRecordingToLead: ошибка сети: $e');
+      throw BitrixApiException('Не удалось прикрепить запись к лиду в Bitrix');
     }
   }
 }

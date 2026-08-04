@@ -43,6 +43,7 @@ dependencies:
   cached_network_image: ^3.3.1
   webview_flutter: ^4.10.0
   mobile_scanner: ^5.2.3
+  record: ^6.2.1
 
 
 dev_dependencies:
@@ -92,9 +93,6 @@ flutter:
 
 # Конфигурация пакета flutter_launcher_icons — запускается командой:
 #   flutter pub run flutter_launcher_icons
-# Сам файл assets/icons/app_icon.png нужно положить в проект — этот
-# конфиг только указывает, откуда его взять для генерации иконок
-# под iOS/Android.
 flutter_launcher_icons:
   android: true
   ios: true

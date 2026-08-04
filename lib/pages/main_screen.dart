@@ -4,6 +4,7 @@ import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/view/new_customer_dialog.dart';
 import 'package:offlinesvet/customer/view/search_customer_screen.dart';
 import 'package:offlinesvet/repositories/products/catalog_sync_service.dart';
+import 'package:offlinesvet/common/call_recorder_button.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -172,6 +173,13 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+
+            // Запись разговора — не привязана к конкретному лиду в момент
+            // начала: можно начать запись, затем заполнить и сохранить
+            // анкету (создастся лид), и только когда запись остановится —
+            // она прикрепится к этому лиду в Bitrix (см. CallRecorderButton).
+            const CallRecorderButton(),
           ],
         ),
       ),
