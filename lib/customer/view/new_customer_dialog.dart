@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/cart/cart.dart';
 import 'package:offlinesvet/customer/customer.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
 
 Future<bool?> showNewCustomerDialog(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -71,6 +72,23 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
         comment: _commentController.text.trim(),
         sourceId: _sourceId,
       );
+
+      // Если в этот момент шла запись разговора (кнопка "Записать
+      // разговор" на главном экране) — останавливаем её и сразу
+      // прикрепляем к только что созданному лиду. Если записи не было —
+      // метод ничего не делает (см. CallRecordingService).
+      // Ошибку отправки записи не считаем ошибкой создания лида: сам
+      // лид уже создан и должен сохраниться в любом случае — менеджера
+      // только предупреждаем отдельно, что запись не прикрепилась.
+      try {
+        await CallRecordingService.instance.stopAndAttachToLead(leadId);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Лид создан, но запись разговора не отправилась: $e')),
+          );
+        }
+      }
 
       final customer = Customer(
         contactId: contactId,
