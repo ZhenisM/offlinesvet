@@ -14,6 +14,8 @@ import 'package:offlinesvet/customer/customer_storage.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/checkout/order_data_service.dart';
 import 'package:offlinesvet/sync/offline_queue.dart';
+import 'package:offlinesvet/bitrix/bitrix_service.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
 
 // -------------------------------------------------------
 // Модель купона (список купонов, только визуал)
@@ -153,6 +155,7 @@ class CheckoutScreen extends StatefulWidget {
 class _CheckoutScreenState extends State<CheckoutScreen> {
   static const _baseUrl = 'https://prons.kz/ajax/offlinesvet';
   final _dio = Dio();
+  final _bitrixService = BitrixService(dio: Dio());
   final _orderDataService = OrderDataService();
 
   late Cart _cart;
@@ -618,6 +621,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // -------------------------------------------------------
   // Отправка заказа
   // -------------------------------------------------------
+  Future<void> _toggleCartRecording() async {
+    final service = CallRecordingService.instance;
+    if (service.isRecording.value) {
+      await service.stopRecordingForCart();
+      return;
+    }
+    if (!await service.hasPermission()) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нужно разрешение на использование микрофона')),
+      );
+      return;
+    }
+    await service.startForCart(_cart.id);
+  }
+
+  /// Ищет сделку по номеру заказа и прикрепляет к ней отложенную запись —
+  /// с несколькими попытками, потому что сделка создаётся отдельной
+  /// автоматизацией Bitrix (бизнес-процесс из нескольких шагов) не сразу
+  /// вместе с заказом — на практике задержка доходила до 6-7 МИНУТ.
+  /// Выполняется в фоне (не awaited в месте вызова) — не задерживает
+  /// переход на экран успеха заказа.
+  Future<void> _attachRecordingToDealWithRetries(String cartId, String orderId) async {
+    const maxAttempts = 20;
+    const delayBetween = Duration(seconds: 30); // итого до ~10 минут ожидания
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final dealId = await _bitrixService.findDealByOrderNumber(orderId);
+        if (dealId != null) {
+          await CallRecordingService.instance.attachPendingRecordingForCart(cartId, dealId);
+          debugPrint('Запись успешно прикреплена к сделке $dealId (заказ $orderId)');
+          return;
+        }
+        debugPrint('Сделка по номеру заказа $orderId ещё не найдена (попытка $attempt/$maxAttempts)');
+      } catch (e) {
+        debugPrint('Ошибка поиска/прикрепления сделки, попытка $attempt/$maxAttempts: $e');
+      }
+      if (attempt < maxAttempts) await Future.delayed(delayBetween);
+    }
+    debugPrint('Не удалось прикрепить запись к сделке заказа $orderId после $maxAttempts попыток');
+  }
+
   Future<void> _submit() async {
     // Валидация: для юр. лица обязательно только наименование компании
     if (_isLegal) {
@@ -629,6 +675,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     setState(() { _loading = true; _error = null; });
+
+    // Останавливаем запись СРАЗУ по нажатию "Оформить", не дожидаясь
+    // ответа сервера — раньше это происходило только после успешного
+    // create_order.php, а сам запрос может думать несколько минут, из-за
+    // чего на практике казалось, что кнопка микрофона вообще не реагирует.
+    // Прикрепление к сделке всё равно происходит позже (см. ниже,
+    // hasPendingRecordingForCart + _attachRecordingToDealWithRetries) —
+    // ранняя остановка этому не мешает, просто сама индикация в
+    // интерфейсе теперь мгновенная.
+    // ВРЕМЕННО: диагностика — почему проверка может не срабатывать
+
+    if (CallRecordingService.instance.isRecording.value) {
+      await CallRecordingService.instance.stopRecordingForCart();
+    }
 
     try {
       final managerId = await CustomerStorage.currentManagerId();
@@ -701,6 +761,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'props'        : props,
       };
 
+      // ВРЕМЕННО: печатаем точное тело запроса, чтобы можно было
+      // скопировать его один в один и протестировать в Postman —
+      // сравнить время ответа сервера на РЕАЛЬНЫЙ полный запрос, а не
+      // на заведомо неполный тестовый.
+      debugPrint('CREATE_ORDER PAYLOAD: ${jsonEncode(payload)}');
+
       final hasNetwork = (await Connectivity().checkConnectivity())
           .any((r) => r != ConnectivityResult.none);
 
@@ -709,6 +775,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // тот же create_order.php, который SyncService уже умеет вызывать
         // автоматически, как только появится интернет (см. sync_service.dart).
         await OfflineQueue.enqueue(QueueActionType.createOrder, payload);
+
+        // Если запись всё ещё идёт за эту корзину — останавливаем и
+        // откладываем её, чтобы не оставалась висеть активной после
+        // ухода с экрана.
+        //
+        // ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: реальное прикрепление к сделке для
+        // ЭТОГО заказа сейчас НЕ произойдёт автоматически — сам заказ
+        // будет создан позже отдельным путём, через SyncService, когда
+        // появится интернет (см. sync_service.dart), а логика поиска
+        // сделки и прикрепления записи (_attachRecordingToDealWithRetries)
+        // сейчас есть только здесь, в online-сценарии оформления. Если
+        // нужно, чтобы это работало и для заказов, оформленных офлайн —
+        // потребуется отдельно перенести эту же логику в sync_service.dart,
+        // в место, где он обрабатывает успешный ответ create_order.php
+        // из очереди.
+        //
+        // Сам останов записи уже произошёл в начале _submit() — здесь
+        // повторно делать этого не нужно.
 
         // Помечаем корзину как оформленную локально — тем же путём, что
         // уже используется для остальных офлайн-изменений статуса корзины
@@ -743,12 +827,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           // пользователь всегда видел один и тот же общий текст исключения.
           // Теперь принимаем любой статус и разбираем тело сами.
           validateStatus: (status) => true,
+          // Раньше запрос не имел ограничения по времени вообще — если
+          // сервер зависал, приложение ждало бесконечно, без единой
+          // подсказки пользователю (и заодно не могло понять, что делать
+          // с активной записью разговора — успех или провал заказа).
+          // Теперь через 3 минуты ожидание прерывается явной ошибкой.
+          receiveTimeout: const Duration(minutes: 3),
         ),
       );
 
       final result = jsonDecode(response.data as String) as Map<String, dynamic>;
       if (result['success'] == true) {
         final orderId = result['order_id'];
+
+        // Запись за эту корзину (если шла) уже остановлена и отложена в
+        // самом начале _submit() — здесь просто ищем сделку по номеру
+        // заказа и прикрепляем к ней.
+
+        // Если для этой корзины есть отложенная запись разговора —
+        // пытаемся прикрепить её к сделке В ФОНЕ, не задерживая переход
+        // на экран успеха. Сделка в Bitrix создаётся отдельной
+        // автоматизацией (бизнес-процесс/робот) не мгновенно вместе с
+        // заказом, а с небольшой задержкой — поэтому пробуем несколько
+        // раз с паузой, а не один раз сразу.
+        if (await CallRecordingService.instance.hasPendingRecordingForCart(_cart.id)) {
+          _attachRecordingToDealWithRetries(_cart.id, orderId.toString());
+        }
+
         if (!mounted) return;
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => OrderSuccessScreen(
@@ -762,6 +867,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (e) {
       setState(() => _error = e.toString());
+      // Запись (если шла) уже остановлена и отложена в самом начале
+      // _submit() — при повторной попытке оформления этой же корзины
+      // отложенная запись всё ещё найдётся через hasPendingRecordingForCart.
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -776,7 +884,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return Scaffold(
         appBar: _buildAppBar(),
         body: const Center(child: CircularProgressIndicator()),
-        bottomNavigationBar: const AppBottomNavBar(currentTab: null),
+        bottomNavigationBar: AppBottomNavBar(currentTab: null, onMicTap: _toggleCartRecording),
       );
     }
     if (_dataError != null) {
@@ -790,7 +898,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             child: const Text('Повторить'),
           ),
         ])),
-        bottomNavigationBar: const AppBottomNavBar(currentTab: null),
+        bottomNavigationBar: AppBottomNavBar(currentTab: null, onMicTap: _toggleCartRecording),
       );
     }
 
@@ -841,7 +949,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ]),
           ),
         ),
-        AppBottomNavBar(currentTab: null, onCartTap: () => Navigator.of(context).pop()),
+        AppBottomNavBar(
+          currentTab: null,
+          onCartTap: () => Navigator.of(context).pop(),
+          onMicTap: _toggleCartRecording,
+        ),
       ]),
     );
   }

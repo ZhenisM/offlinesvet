@@ -12,6 +12,7 @@ import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/checkout/checkout_screen.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -72,6 +73,17 @@ class _CartScreenState extends State<CartScreen> {
       final carts = await _cartApiService.loadCarts(managerId: managerId);
       if (!mounted) return;
       setState(() => _carts = carts);
+
+      // Держим глобально известную "активную корзину" в актуальном
+      // состоянии при каждой загрузке списка — это покрывает не только
+      // явное переключение (см. _switchCart), но и случай, когда корзина
+      // стала текущей другим путём (например, только что создана через
+      // анкету лида).
+      final current = _currentCartFrom(carts);
+      if (current != null) {
+        await CustomerStorage.setActiveCartId(current.id);
+      }
+
       // Загружаем товары ВСЕХ корзин сразу — чтобы в sheet выбора
       // корзины цены были видны сразу для всех, а не только текущей.
       _loadProductsForAllCarts(carts);
@@ -173,6 +185,14 @@ class _CartScreenState extends State<CartScreen> {
         basketId: cart.id,
         managerId: managerId,
       );
+
+      // Запоминаем глобально, какая корзина сейчас активна (кнопка
+      // микрофона в нижней панели читает это значение на любом экране,
+      // не только здесь) и, если в этот момент шла запись за ДРУГУЮ
+      // корзину — останавливаем и откладываем её именно за ту, прежнюю.
+      await CustomerStorage.setActiveCartId(cart.id);
+      await CallRecordingService.instance.onActiveCartChanged(cart.id);
+
       if (cart.clientInfo != null) {
         final customer = Customer.fromMultibasketsClientInfo(
           cart.clientInfo!,

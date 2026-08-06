@@ -289,4 +289,74 @@ class BitrixService {
       throw BitrixApiException('Не удалось прикрепить запись к лиду в Bitrix');
     }
   }
+
+  // ПОДТВЕРЖДЕНО: поле ORIGIN_ID — стандартное системное поле Bitrix,
+  // предназначенное именно для этого сценария (хранит ID записи из
+  // внешней системы, из которой была создана сделка — в вашем случае
+  // это номер заказа на сайте). Проверено на реальной сделке (ID 385919):
+  // ORIGIN_ID там равен номеру заказа "100097", как и ожидалось.
+  static const _dealOrderNumberFieldCode = 'ORIGIN_ID';
+
+  /// Ищет сделку (Deal) по номеру заказа на сайте — сделка создаётся
+  /// автоматически при оформлении заказа через create_order.php, и в
+  /// её карточке номер заказа хранится отдельным полем (подтверждено
+  /// скриншотом карточки сделки в Bitrix24: "Номер заказа: 100097").
+  /// Это точное совпадение, а не эвристика "самая свежая сделка" —
+  /// надёжнее для привязки записи разговора именно к нужной сделке.
+  Future<String?> findDealByOrderNumber(String orderId) async {
+    await _requireInternet();
+
+    try {
+      final response = await dio.post(
+        '$_bitrixWebhookUrl/crm.deal.list.json',
+        data: {
+          'filter': {_dealOrderNumberFieldCode: orderId},
+          'select': ['ID'],
+        },
+      );
+
+      final data = _unwrapResult(response);
+      final result = data['result'];
+      if (result is List && result.isNotEmpty) {
+        return result.first['ID'].toString();
+      }
+      return null;
+    } on DioException catch (e) {
+      debugPrint('findDealByOrderNumber: ошибка сети: $e');
+      return null;
+    }
+  }
+
+  /// Прикрепляет аудиофайл записи разговора как комментарий с файлом
+  /// к указанной сделке (та же логика, что attachRecordingToLead, но
+  /// для сделки, а не лида).
+  Future<void> attachRecordingToDeal({
+    required String dealId,
+    required String base64Content,
+    required String filename,
+    String comment = 'Запись разговора с клиентом (из мобильного приложения)',
+  }) async {
+    await _requireInternet();
+
+    try {
+      final response = await dio.post(
+        '$_bitrixWebhookUrl/crm.timeline.comment.add.json',
+        data: {
+          'fields': {
+            'ENTITY_ID': dealId,
+            'ENTITY_TYPE': 'deal',
+            'COMMENT': comment,
+            'FILES': [
+              [filename, base64Content],
+            ],
+          },
+        },
+      );
+
+      _unwrapResult(response);
+    } on DioException catch (e) {
+      debugPrint('attachRecordingToDeal: ошибка сети: $e');
+      throw BitrixApiException('Не удалось прикрепить запись к сделке в Bitrix');
+    }
+  }
 }

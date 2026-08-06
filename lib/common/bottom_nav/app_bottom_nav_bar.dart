@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:offlinesvet/sync/sync_status_notifier.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/customer/customer_storage.dart';
 
 enum AppBottomTab { profile, scanner, mic, catalog, cart }
 
@@ -8,10 +10,12 @@ class AppBottomNavBar extends StatelessWidget {
     super.key,
     required this.currentTab,
     this.onCartTap,
+    this.onMicTap,
   });
 
   final AppBottomTab? currentTab;
   final VoidCallback? onCartTap; // если передан — используется вместо стандартного перехода
+  final VoidCallback? onMicTap;  // старт/стоп записи разговора для текущей корзины — задаётся экраном, который знает, какая корзина сейчас активна
 
   void _goTo(BuildContext context, AppBottomTab tab) {
     if (currentTab == tab) return;
@@ -21,7 +25,7 @@ class AppBottomNavBar extends StatelessWidget {
       case AppBottomTab.scanner:
         Navigator.of(context).pushReplacementNamed('/scanner');
       case AppBottomTab.mic:
-        break; // заглушка
+        onMicTap?.call();
       case AppBottomTab.catalog:
         Navigator.of(context).pushReplacementNamed('/products-list');
       case AppBottomTab.cart:
@@ -35,6 +39,41 @@ class AppBottomNavBar extends StatelessWidget {
 
   void _goToCatalog(BuildContext context) => _goTo(context, AppBottomTab.catalog);
   void _goToCart(BuildContext context) => _goTo(context, AppBottomTab.cart);
+
+  /// Поведение кнопки микрофона по умолчанию — используется на всех
+  /// экранах, которые не передали свой onMicTap явно (checkout_screen.dart
+  /// передаёт свой, т.к. там корзина известна точно и сразу; здесь же
+  /// берём её из CustomerStorage — глобально сохранённая "активная
+  /// корзина", актуальная на любом экране с этой нижней панелью).
+  Future<void> _defaultMicTap(BuildContext context) async {
+    final service = CallRecordingService.instance;
+
+    if (service.isRecording.value) {
+      await service.stopRecordingForCart();
+      return;
+    }
+
+    final cartId = await CustomerStorage.getActiveCartId();
+    if (cartId == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Нет активной корзины — сначала выберите или создайте клиента')),
+        );
+      }
+      return;
+    }
+
+    if (!await service.hasPermission()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Нужно разрешение на использование микрофона')),
+        );
+      }
+      return;
+    }
+
+    await service.startForCart(cartId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,16 +110,25 @@ class AppBottomNavBar extends StatelessWidget {
                 selected: currentTab == AppBottomTab.scanner,
                 onTap: () => _goTo(context, AppBottomTab.scanner),
               ),
-              // 3. Микрофон — центральная зелёная кнопка
-              GestureDetector(
-                onTap: () {},
-                child: Container(
-                  width: 48, height: 48,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF4CAF50),
-                    shape: BoxShape.circle,
+              // 3. Микрофон — центральная кнопка, старт/стоп записи разговора
+              // за текущую корзину (какая корзина активна — решает экран,
+              // который передаёт onMicTap; сам виджет этого не знает).
+              ValueListenableBuilder<bool>(
+                valueListenable: CallRecordingService.instance.isRecording,
+                builder: (context, isRecording, _) => GestureDetector(
+                  onTap: onMicTap ?? () => _defaultMicTap(context),
+                  child: Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(
+                      color: isRecording ? Colors.red : const Color(0xFF4CAF50),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isRecording ? Icons.stop : Icons.mic,
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
-                  child: const Icon(Icons.mic, color: Colors.white, size: 24),
                 ),
               ),
               // 4. Каталог

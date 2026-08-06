@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/cart/cart.dart';
 import 'package:offlinesvet/customer/customer.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
 
 enum _SearchEntity { contact, company }
 
@@ -121,6 +122,29 @@ class _Tab extends StatelessWidget {
 }
 
 // -------------------------------------------------------
+// Общая функция: после создания корзины подтянуть актуальный список
+// и синхронизировать глобально известную "активную корзину" — тем же
+// способом, что уже используется в cart_screen.dart._loadCarts().
+// Без этого кнопка микрофона (если запись стартовала не с экрана
+// корзины) могла бы взять устаревший ID из предыдущей сессии/теста.
+// -------------------------------------------------------
+Future<void> _syncActiveCartAfterCreate(CartApiService cartApiService, int managerId) async {
+  try {
+    final carts = await cartApiService.loadCarts(managerId: managerId);
+    final current = carts.where((c) => c.isCurrent).toList();
+    if (current.isNotEmpty) {
+      final newCartId = current.first.id;
+      await CustomerStorage.setActiveCartId(newCartId);
+      // Если в этот момент шла запись за какую-то ДРУГУЮ (старую) корзину —
+      // останавливаем и откладываем её именно за ту, прежнюю.
+      await CallRecordingService.instance.onActiveCartChanged(newCartId);
+    }
+  } catch (e) {
+    debugPrint('_syncActiveCartAfterCreate: не удалось синхронизировать активную корзину: $e');
+  }
+}
+
+// -------------------------------------------------------
 // Поиск контакта
 // -------------------------------------------------------
 class _ContactSearchView extends StatefulWidget {
@@ -175,6 +199,7 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
       final managerId = await CustomerStorage.currentManagerId();
       if (managerId != null) {
         await _cartApiService.createCart(managerId: managerId, customer: customer);
+        await _syncActiveCartAfterCreate(_cartApiService, managerId);
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -330,6 +355,7 @@ class _CompanySearchViewState extends State<_CompanySearchView> {
       final managerId = await CustomerStorage.currentManagerId();
       if (managerId != null) {
         await _cartApiService.createCart(managerId: managerId, customer: customer);
+        await _syncActiveCartAfterCreate(_cartApiService, managerId);
       }
       if (!mounted) return;
       Navigator.of(context).pop(true);

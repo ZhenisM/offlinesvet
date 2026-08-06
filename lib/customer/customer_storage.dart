@@ -15,6 +15,7 @@ class CustomerStorage {
   static const _userIdKey = 'user_id';
   static String _customersKey(String userId) => 'customers_$userId';
   static String _activeIdKey(String userId) => 'active_customer_id_$userId';
+  static String _activeCartIdKey(String userId) => 'active_cart_id_$userId';
 
   static Future<String?> _currentUserId() async {
     final prefs = await SharedPreferences.getInstance();
@@ -91,6 +92,24 @@ class CustomerStorage {
     await prefs.setString(_activeIdKey(userId), customer.storageKey);
   }
 
+  /// ID текущей активной корзины — читается кнопкой записи разговора в
+  /// нижней панели (AppBottomNavBar), чтобы знать, к какой корзине
+  /// привязывать запись, на каком бы экране менеджер сейчас ни находился.
+  /// Обновляется в cart_screen.dart при переключении/загрузке корзин.
+  static Future<void> setActiveCartId(String cartId) async {
+    final userId = await _currentUserId();
+    if (userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_activeCartIdKey(userId), cartId);
+  }
+
+  static Future<String?> getActiveCartId() async {
+    final userId = await _currentUserId();
+    if (userId == null) return null;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_activeCartIdKey(userId));
+  }
+
   /// Очищает список клиентов текущего менеджера (например, при логауте).
   static Future<void> clearAll() async {
     final userId = await _currentUserId();
@@ -99,5 +118,6 @@ class CustomerStorage {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_customersKey(userId));
     await prefs.remove(_activeIdKey(userId));
+    await prefs.remove(_activeCartIdKey(userId));
   }
 }

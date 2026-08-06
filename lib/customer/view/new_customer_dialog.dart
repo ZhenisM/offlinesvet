@@ -133,6 +133,27 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
     final managerId = await CustomerStorage.currentManagerId();
     if (managerId != null) {
       await _cartApiService.createCart(managerId: managerId, customer: customer);
+
+      // Подтягиваем актуальный список корзин и синхронизируем глобально
+      // известную "активную корзину" (CustomerStorage.setActiveCartId) —
+      // тот же способ, что уже используется в cart_screen.dart и
+      // search_customer_screen.dart. Без этого кнопка микрофона (если
+      // запись стартовала не с экрана корзины, например в каталоге сразу
+      // после создания клиента) взяла бы устаревший ID из предыдущей
+      // сессии/теста, и запись не прикрепилась бы к нужной сделке.
+      try {
+        final carts = await _cartApiService.loadCarts(managerId: managerId);
+        final current = carts.where((c) => c.isCurrent).toList();
+        if (current.isNotEmpty) {
+          final newCartId = current.first.id;
+          await CustomerStorage.setActiveCartId(newCartId);
+          // Если в этот момент шла запись за какую-то ДРУГУЮ (старую)
+          // корзину — останавливаем и откладываем её именно за ту, прежнюю.
+          await CallRecordingService.instance.onActiveCartChanged(newCartId);
+        }
+      } catch (e) {
+        debugPrint('_finalizeCustomerSelection: не удалось синхронизировать активную корзину: $e');
+      }
     }
     if (!mounted) return;
     Navigator.of(context).pop(true);
