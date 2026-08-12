@@ -41,6 +41,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
   int _page = 1;
   static const int _limit = 50;
 
+  // Кнопка "наверх"
+  bool _showScrollToTop = false;
+  static const double _scrollToTopThreshold = 400;
+
   // Фильтры
   List<FilterDef> _filterDefs = [];
   RangeValues _priceRange = const RangeValues(0, 100000000);
@@ -66,8 +70,25 @@ class _CategoryScreenState extends State<CategoryScreen> {
   void _onScroll() {
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 300) {
-      _loadProducts();
+      if (_activeFilters.isEmpty) {
+        _loadProducts();
+      } else {
+        _applyFilters();
+      }
     }
+
+    final shouldShow = _scrollController.position.pixels > _scrollToTopThreshold;
+    if (shouldShow != _showScrollToTop) {
+      setState(() => _showScrollToTop = shouldShow);
+    }
+  }
+
+  Future<void> _scrollToTop() async {
+    await _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _loadProducts() async {
@@ -128,157 +149,198 @@ class _CategoryScreenState extends State<CategoryScreen> {
           ),
         ],
       ),
-      body: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
-          // Плашка фильтров
-          SliverToBoxAdapter(
-            child: Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              child: Row(children: [
-                // Кнопка Фильтры
-                GestureDetector(
-                  onTap: _filtersLoaded ? _openFilter : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: !_filtersLoaded
-                          ? Colors.grey.shade200
-                          : _activeFilters.isEmpty
-                              ? const Color(0xFFF3F2F7)
-                              : const Color(0xFF4CAF50),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (!_filtersLoaded)
-                        const SizedBox(
-                          width: 14, height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.grey,
-                          ),
-                        )
-                      else
-                        Icon(Icons.tune,
-                          size: 16,
-                          color: _activeFilters.isEmpty ? Colors.black87 : Colors.white),
-                      const SizedBox(width: 6),
-                      Text(
-                        !_filtersLoaded
-                            ? 'Загрузка...'
-                            : _activeFilters.isEmpty
-                                ? 'Фильтры'
-                                : 'Фильтры (${_activeFilters.activeCount})',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
+      body: Stack(
+        children: [
+          CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              // Плашка фильтров
+              SliverToBoxAdapter(
+                child: Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(children: [
+                    // Кнопка Фильтры
+                    GestureDetector(
+                      onTap: _filtersLoaded ? _openFilter : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
                           color: !_filtersLoaded
-                              ? Colors.grey
-                              : _activeFilters.isEmpty ? Colors.black87 : Colors.white,
+                              ? Colors.grey.shade200
+                              : _activeFilters.isEmpty
+                                  ? const Color(0xFFF3F2F7)
+                                  : const Color(0xFF4CAF50),
+                          borderRadius: BorderRadius.circular(20),
                         ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          if (!_filtersLoaded)
+                            const SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.grey,
+                              ),
+                            )
+                          else
+                            Icon(Icons.tune,
+                              size: 16,
+                              color: _activeFilters.isEmpty ? Colors.black87 : Colors.white),
+                          const SizedBox(width: 6),
+                          Text(
+                            !_filtersLoaded
+                                ? 'Загрузка...'
+                                : _activeFilters.isEmpty
+                                    ? 'Фильтры'
+                                    : 'Фильтры (${_activeFilters.activeCount})',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: !_filtersLoaded
+                                  ? Colors.grey
+                                  : _activeFilters.isEmpty ? Colors.black87 : Colors.white,
+                            ),
+                          ),
+                        ]),
                       ),
-                    ]),
-                  ),
-                ),
-                const Spacer(),
-                // Избранное
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pushNamed('/favorites'),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    child: SvgPicture.asset(
-                      'assets/icons/heart.svg',
-                      width: 22, height: 22,
-                      colorFilter: const ColorFilter.mode(
-                        Colors.black54, BlendMode.srcIn),
                     ),
-                  ),
-                ),
-                // Сравнение
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pushNamed('/compare'),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                    child: SvgPicture.asset(
-                      'assets/icons/compare.svg',
-                      width: 22, height: 22,
-                      colorFilter: const ColorFilter.mode(
-                        Colors.black54, BlendMode.srcIn),
-                    ),
-                  ),
-                ),
-              ]),
-            ),
-          ),
-          // Подкатегории
-          if (widget.section.children.isNotEmpty) ...[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text('Подкатегории',
-                    style: Theme.of(context).textTheme.titleMedium),
-              ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) {
-                  final child = widget.section.children[i];
-                  return ListTile(
-                    leading: CategoryThumbnail(imageUrl: child.image),
-                    title: Text(child.name),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CategoryScreen(
-                          section: child,
-                          allProducts: const [],
-                          allSections: widget.allSections,
+                    const Spacer(),
+                    // Избранное
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pushNamed('/favorites'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        child: SvgPicture.asset(
+                          'assets/icons/heart.svg',
+                          width: 22, height: 22,
+                          colorFilter: const ColorFilter.mode(
+                            Colors.black54, BlendMode.srcIn),
                         ),
                       ),
                     ),
-                  );
-                },
-                childCount: widget.section.children.length,
+                    // Сравнение
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pushNamed('/compare'),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        child: SvgPicture.asset(
+                          'assets/icons/compare.svg',
+                          width: 22, height: 22,
+                          colorFilter: const ColorFilter.mode(
+                            Colors.black54, BlendMode.srcIn),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
               ),
-            ),
-            const SliverToBoxAdapter(child: Divider()),
-          ],
+              // Подкатегории
+              if (widget.section.children.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text('Подкатегории',
+                        style: Theme.of(context).textTheme.titleMedium),
+                  ),
+                ),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      final child = widget.section.children[i];
+                      return ListTile(
+                        leading: CategoryThumbnail(imageUrl: child.image),
+                        title: Text(child.name),
+                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CategoryScreen(
+                              section: child,
+                              allProducts: const [],
+                              allSections: widget.allSections,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    childCount: widget.section.children.length,
+                  ),
+                ),
+                const SliverToBoxAdapter(child: Divider()),
+              ],
 
-          // Заголовок товаров
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                '${_products.length}${_hasMore ? '+' : ''} товар${_suffix(_products.length)}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey.shade600,
+              // Заголовок товаров
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Text(
+                    '${_products.length}${_hasMore ? '+' : ''} товар${_suffix(_products.length)}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ),
+
+              // Сетка товаров
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 0.62,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => ProductTile(product: _products[i]),
+                    childCount: _products.length,
+                  ),
+                ),
+              ),
+
+              // Лоадер / ошибка / конец
+              SliverToBoxAdapter(child: _buildFooter()),
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+            ],
+          ),
+          // Кнопка "наверх"
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: Center(
+              child: AnimatedOpacity(
+                opacity: _showScrollToTop ? 1 : 0,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                child: IgnorePointer(
+                  ignoring: !_showScrollToTop,
+                  child: Material(
+                    color: Colors.transparent,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _scrollToTop,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black.withOpacity(0.55),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_upward_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-
-          // Сетка товаров
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 0.62,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => ProductTile(product: _products[i]),
-                childCount: _products.length,
-              ),
-            ),
-          ),
-
-          // Лоадер / ошибка / конец
-          SliverToBoxAdapter(child: _buildFooter()),
-          const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
       bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
@@ -355,12 +417,15 @@ class _CategoryScreenState extends State<CategoryScreen> {
   }
 
   Future<void> _applyFilters() async {
+    if (_loading || !_hasMore) return;
+
+    final isFirstPage = _page == 1;
     setState(() { _loading = true; _error = null; });
     try {
       final payload = {
         'section_id': int.tryParse(widget.section.id) ?? 0,
-        'page': 1,
-        'limit': 50,
+        'page': _page,
+        'limit': _limit,
         'filters': _activeFilters.toRequestPayload(),
       };
       debugPrint('FILTER PAYLOAD: ' + jsonEncode(payload));
@@ -377,17 +442,23 @@ class _CategoryScreenState extends State<CategoryScreen> {
       final meta = json['meta'] as Map<String, dynamic>? ?? {};
       if (!mounted) return;
       setState(() {
-        _products
-          ..clear()
-          ..addAll(list);
+        _products.addAll(list);
         _hasMore = meta['has_more'] == true;
+        _page++;
         _loading = false;
       });
     } catch (e) {
       // Нет сети (или сервер недоступен) — применяем те же фильтры локально
       // к уже закэшированным товарам раздела, вместо того чтобы просто
-      // показать ошибку.
+      // показать ошибку. Офлайн-фильтрация сразу отдаёт все подходящие
+      // товары без пагинации, поэтому её имеет смысл делать только на
+      // первой странице — если сеть отвалилась в середине докачки
+      // отфильтрованного списка, просто останавливаем подгрузку.
       debugPrint('_applyFilters: сеть не удалась ($e), пробуем офлайн-фильтрацию');
+      if (!isFirstPage) {
+        if (mounted) setState(() { _hasMore = false; _loading = false; });
+        return;
+      }
       try {
         final list = await _repository.applyFiltersOffline(widget.section, _activeFilters);
         if (!mounted) return;

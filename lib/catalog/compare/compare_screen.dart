@@ -64,9 +64,9 @@ class _CompareScreenState extends State<CompareScreen> {
   Set<String> _diffKeys() {
     if (_items.length < 2) return {};
     final diffKeys = <String>{};
-    for (final (_, key) in kCompareProps) {
-      final values = _items.map((p) => CompareStore.getPropValue(p, key)).toSet();
-      if (values.length > 1) diffKeys.add(key);
+    for (final prop in kCompareProps) {
+      final values = _items.map((p) => CompareStore.getPropValue(p, prop)).toSet();
+      if (values.length > 1) diffKeys.add(prop.code);
     }
     return diffKeys;
   }
@@ -102,7 +102,7 @@ class _CompareScreenState extends State<CompareScreen> {
     final diffKeys = _showDiff ? _diffKeys() : null;
     final visibleProps = kCompareProps.where((e) {
       if (!_showDiff) return true;
-      return diffKeys!.contains(e.$2);
+      return diffKeys!.contains(e.code);
     }).toList();
 
     return Column(children: [
@@ -191,7 +191,7 @@ class _CompareCard extends StatelessWidget {
   const _CompareCard({required this.product, required this.visibleProps,
       required this.cardWidth, required this.onRemove});
   final Product product;
-  final List<(String, String)> visibleProps;
+  final List<CompareProp> visibleProps;
   final double cardWidth;
   final VoidCallback onRemove;
 
@@ -233,16 +233,24 @@ class _CompareCard extends StatelessWidget {
           ),
         ]),
         // Название
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
-          child: Text(product.name,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-            maxLines: 3, overflow: TextOverflow.ellipsis),
+        GestureDetector(
+          onTap: () => Navigator.of(context).pushNamed('/products-item', arguments: product),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: Text(product.name,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                decoration: TextDecoration.underline,
+                decorationColor: Colors.black26,
+              ),
+              maxLines: 3, overflow: TextOverflow.ellipsis),
+          ),
         ),
         // Свойства
         ...visibleProps.map((e) => _PropRow(
-          label: e.$1,
-          value: CompareStore.getPropValue(product, e.$2),
+          label: e.label,
+          value: CompareStore.getPropValue(product, e),
         )),
         const SizedBox(height: 8),
       ]),

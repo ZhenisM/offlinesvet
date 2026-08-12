@@ -5,22 +5,40 @@ import 'package:offlinesvet/repositories/products/models/product.dart';
 
 /// Список свойств для отображения в сравнении.
 /// Порядок важен — именно в таком порядке выводятся строки.
-const kCompareProps = [
-  ('Цена',           '__price__'),    // специальный ключ — берём из prices
-  ('Бренд',         '__brend__'),    // из product.brend
-  ('Артикул',       '__article__'),  // из product.article
-  ('Страна',        'STRANA'),
-  ('Стиль',         'STIL'),
-  ('Цвет плафонов', 'TSVET_PLAFONOV'),
-  ('Цвет арматуры', 'TSVET_ARMATURY'),
-  ('Материал',      'MATERIAL_PLAFONOV'),
-  ('Высота, мм',    'VYSOTA'),
-  ('Ширина, мм',    'SHIRINA'),
-  ('Глубина, мм',   'GLUBINA'),
-  ('Мощность, W',   'MOSHCHNOST_SVETILNIKA'),
-  ('Кол-во ламп',   'KOLICHESTVO_LAMP'),
-  ('Тип цоколя',    'TIP_TSOKOLYA'),
-  ('Световой поток','SVETOVOY_POTOK'),
+///
+/// Для каждого свойства указан:
+///  - label — заголовок строки в сравнении;
+///  - code  — основной CODE свойства (как в offline-фильтрах/products_repository);
+///  - names — запасные варианты человекочитаемого NAME свойства с сервера,
+///            на случай если у конкретного товара/категории CODE отличается —
+///            именно NAME гарантированно совпадает с тем, что показывается
+///            в блоке "Характеристики" на карточке товара.
+class CompareProp {
+  final String label;
+  final String code;
+  final List<String> names;
+  const CompareProp(this.label, this.code, [this.names = const []]);
+}
+
+const kCompareProps = <CompareProp>[
+  CompareProp('Цена',    '__price__'),   // специальный ключ — берём из prices
+  CompareProp('Бренд',   '__brend__'),   // из product.brend
+  CompareProp('Артикул', '__article__'), // из product.article
+  CompareProp('Страна',         'STRANA',            ['Страна']),
+  CompareProp('Стиль',          'STIL',              ['Стиль']),
+  CompareProp('Цвет плафонов',  'TSVET_PLAFONOV',    ['Цвет плафонов']),
+  CompareProp('Цвет арматуры',  'TSVET_ARMATURY',    ['Цвет арматуры']),
+  CompareProp('Материал',       'MATERIAL_PLAFONOV', ['Материал плафонов', 'Материал']),
+  CompareProp('Диаметр, мм',    'DIAMETR_MM',        ['Диаметр, мм']),
+  CompareProp('Высота, мм',     'VYSOTA_MM',         ['Высота, мм']),
+  CompareProp('Ширина, мм',     'SHIRINA_MM',        ['Ширина, мм']),
+  CompareProp('Глубина, мм',    'GLUBINA_MM',        ['Глубина, мм']),
+  CompareProp('Мощность светильника, W', 'MOSHCHNOST_SVETILNIKA_W',
+      ['Мощность светильника, W', 'Мощность, W']),
+  CompareProp('Кол-во ламп',    'KOLICHESTVO_LAMP',  ['Количество ламп', 'Кол-во ламп']),
+  CompareProp('Тип цоколя',     'TIP_TSOKOLYA',      ['Тип цоколя']),
+  CompareProp('Световой поток', 'SVETOVOY_POTOK',
+      ['Световой поток', 'Световой поток, Лм', 'Световой поток, лм']),
 ];
 
 /// Глобальное состояние сравнения
@@ -117,8 +135,8 @@ class CompareStore {
   }
 
   /// Получить значение свойства для отображения в сравнении
-  static String getPropValue(Product p, String propKey) {
-    switch (propKey) {
+  static String getPropValue(Product p, CompareProp prop) {
+    switch (prop.code) {
       case '__price__':
         if (p.prices.isEmpty) return '—';
         final price = p.prices.map((x) => x.price).reduce((a, b) => a < b ? a : b);
@@ -130,8 +148,25 @@ class CompareStore {
       case '__article__':
         return p.article?.isNotEmpty == true ? p.article! : '—';
       default:
-        final prop = p.props[propKey];
-        return prop?.value.isNotEmpty == true ? prop!.value : '—';
+        // 1) Прямое совпадение по CODE свойства.
+        final direct = p.props[prop.code];
+        if (direct != null && direct.value.trim().isNotEmpty) return direct.value;
+
+        // 2) Запасной вариант — ищем среди всех свойств товара по его
+        // человекочитаемому названию (NAME с сервера). Это то же самое
+        // название, что показывается в блоке "Характеристики" на карточке
+        // товара, поэтому оно надёжнее CODE, который может отличаться
+        // у разных категорий/товаров.
+        for (final name in prop.names) {
+          final normalized = name.trim().toLowerCase();
+          for (final value in p.props.values) {
+            if (value.name.trim().toLowerCase() == normalized &&
+                value.value.trim().isNotEmpty) {
+              return value.value;
+            }
+          }
+        }
+        return '—';
     }
   }
 
