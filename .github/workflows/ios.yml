@@ -80,9 +80,27 @@ jobs:
           </plist>
           EOF
 
-      - name: Build Signed IPA
+      - name: Flutter Build (Prepare, No Codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Archive with Manual Signing
         run: |
-          flutter build ipa --release --export-options-plist=ExportOptions.plist
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/Runner.xcarchive \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=9MX9JW8467 \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="OfflineSvet App Store Profile"
+
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath $RUNNER_TEMP/Runner.xcarchive \
+            -exportPath $RUNNER_TEMP/build \
+            -exportOptionsPlist ExportOptions.plist
 
       - name: Setup API Key for Upload
         env:
@@ -98,7 +116,7 @@ jobs:
           ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
           xcrun altool --upload-app \
-            -f build/ios/ipa/*.ipa \
+            -f $RUNNER_TEMP/build/*.ipa \
             -t ios \
             --apiKey "$KEY_ID" \
             --apiIssuer "$ISSUER_ID"
@@ -107,4 +125,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: offlinesvet-ipa
-          path: build/ios/ipa/*.ipa
+          path: ${{ runner.temp }}/build/*.ipa
