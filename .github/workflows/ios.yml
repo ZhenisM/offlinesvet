@@ -1,4 +1,4 @@
-name: iOS Build
+name: iOS Build and Deploy
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  build-ios:
+  build-and-deploy-ios:
     runs-on: macos-latest
 
     steps:
@@ -28,29 +28,83 @@ jobs:
       - name: Flutter Pub Get
         run: flutter pub get
 
-      - name: Show Flutter Version
-        run: flutter --version
-
-      - name: Check iOS Project
+      - name: Install Apple Certificate
+        env:
+          P12_BASE64: ${{ secrets.P12_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-          ls -la ios
-          ls -la ios/Runner
-          ls -la ios/Flutter
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 
-      - name: Build iOS (No Code Sign)
-        run: flutter build ios --release --no-codesign
+          echo -n "$P12_BASE64" | base64 --decode -o $RUNNER_TEMP/certificate.p12
 
-      - name: Create Payload
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import $RUNNER_TEMP/certificate.p12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+
+      - name: Install Provisioning Profile
+        env:
+          PROFILE_BASE64: ${{ secrets.OFFLINESVET_PROFILE_BASE64 }}
         run: |
-          mkdir Payload
-          cp -R build/ios/iphoneos/Runner.app Payload/
+          PROFILE_DIR=~/Library/MobileDevice/Provisioning\ Profiles
+          mkdir -p "$PROFILE_DIR"
+          echo -n "$PROFILE_BASE64" | base64 --decode -o "$PROFILE_DIR/offlinesvet.mobileprovision"
 
-      - name: Create IPA
+      - name: Create ExportOptions.plist
         run: |
-          zip -r offlinesvet.ipa Payload
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>9MX9JW8467</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>kz.svet.offline.offlinesvet</key>
+                  <string>OfflineSvet App Store Profile</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
 
-      - name: Upload IPA
+      - name: Build Signed IPA
+        run: |
+          flutter build ipa --release --export-options-plist=ExportOptions.plist
+
+      - name: Setup API Key for Upload
+        env:
+          API_KEY_BASE64: ${{ secrets.APPSTORE_API_KEY_BASE64 }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          echo -n "$API_KEY_BASE64" | base64 --decode -o ~/private_keys/AuthKey_${KEY_ID}.p8
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app \
+            -f build/ios/ipa/*.ipa \
+            -t ios \
+            --apiKey "$KEY_ID" \
+            --apiIssuer "$ISSUER_ID"
+
+      - name: Upload IPA as artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: offlinesvet-ipa
-          path: offlinesvet.ipa
+          path: build/ios/ipa/*.ipa
