@@ -10,6 +10,7 @@ class FilterDef {
   final List<String> values;
   final double min;
   final double max;
+  final Map<String, int> valueCounts; // значение -> сколько товаров (сейчас заполнено только для "В наличии")
 
   const FilterDef({
     required this.code,
@@ -18,6 +19,7 @@ class FilterDef {
     this.values = const [],
     this.min = 0,
     this.max = 0,
+    this.valueCounts = const {},
   });
 
   factory FilterDef.fromJson(Map<String, dynamic> j) => FilterDef(
@@ -28,6 +30,8 @@ class FilterDef {
         ?.map((e) => e.toString()).toList() ?? [],
     min:    (j['min'] as num?)?.toDouble() ?? 0,
     max:    (j['max'] as num?)?.toDouble() ?? 0,
+    valueCounts: (j['value_counts'] as Map<String, dynamic>?)
+        ?.map((k, v) => MapEntry(k, (v as num).toInt())) ?? const {},
   );
 }
 
@@ -462,6 +466,7 @@ class _ListFilterTileState extends State<_ListFilterTile> {
         // Список значений
         ...values.map((v) {
           final isSelected = widget.selected.contains(v);
+          final count = widget.filter.valueCounts[v];
           return InkWell(
             onTap: () => widget.onToggle(v),
             child: Padding(
@@ -484,7 +489,7 @@ class _ListFilterTileState extends State<_ListFilterTile> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(v,
+                  child: Text(count != null ? '$v ($count)' : v,
                     style: TextStyle(
                       fontSize: 14,
                       color: isSelected ? const Color(0xFF4CAF50) : Colors.black87,

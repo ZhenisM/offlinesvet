@@ -88,3 +88,28 @@ class Product {
     );
   }
 }
+
+/// Остаток товара на одном складе — для блока "Наличие на складах" на
+/// детальной карточке (get_product_stores.php).
+class StoreStock {
+  final String id;
+  final String name;
+  final int amount;
+
+  const StoreStock({required this.id, required this.name, required this.amount});
+
+  factory StoreStock.fromJson(Map<String, dynamic> json) => StoreStock(
+        id: json['id'].toString(),
+        name: json['name'].toString(),
+        amount: (json['amount'] as num).toInt(),
+      );
+}
+
+/// Остатки товара по всем складам + отдельная пометка про Москву (там
+/// сайт не показывает точное число — "уточняйте у менеджера").
+class ProductStores {
+  final List<StoreStock> stores;
+  final String? moscowNote;
+
+  const ProductStores({required this.stores, required this.moscowNote});
+}

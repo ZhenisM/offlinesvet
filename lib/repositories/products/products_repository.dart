@@ -161,6 +161,57 @@ class ProductsRepository {
     }
   }
 
+  /// Все картинки товара (основная + доп. фото) для слайдера на детальной
+  /// карточке — только онлайн, без офлайн-кэша (как и остатки по складам:
+  /// это подгружается точечно, когда открыта конкретная карточка).
+  Future<List<String>> getProductImages(String productId) async {
+    try {
+      final response = await dio.get(
+        '$_baseUrl/get_product_images.php',
+        queryParameters: {'product_id': productId},
+        options: Options(responseType: ResponseType.plain),
+      );
+      final decoded = jsonDecode(response.data as String) as Map<String, dynamic>;
+      if (decoded['error'] != null) {
+        debugPrint('getProductImages: ошибка сервера: ${decoded['error']}');
+        return const [];
+      }
+      final result = decoded['result'] as Map<String, dynamic>;
+      final imagesJson = result['images'] as List<dynamic>? ?? [];
+      return imagesJson.map((e) => e.toString()).toList();
+    } catch (e) {
+      debugPrint('getProductImages: ошибка ($e)');
+      return const [];
+    }
+  }
+
+  /// Остатки товара по складам — только онлайн (актуальность важнее
+  /// офлайн-доступности для этих данных, поэтому без кэша/фолбэка: если
+  /// нет сети, просто вернём пустой список и экран покажет "нет данных").
+  Future<ProductStores> getProductStores(String productId) async {
+    try {
+      final response = await dio.get(
+        '$_baseUrl/get_product_stores.php',
+        queryParameters: {'product_id': productId},
+        options: Options(responseType: ResponseType.plain),
+      );
+      final decoded = jsonDecode(response.data as String) as Map<String, dynamic>;
+      if (decoded['error'] != null) {
+        debugPrint('getProductStores: ошибка сервера: ${decoded['error']}');
+        return const ProductStores(stores: [], moscowNote: null);
+      }
+      final result = decoded['result'] as Map<String, dynamic>;
+      final storesJson = result['stores'] as List<dynamic>? ?? [];
+      return ProductStores(
+        stores: storesJson.map((e) => StoreStock.fromJson(e as Map<String, dynamic>)).toList(),
+        moscowNote: result['moscow_note'] as String?,
+      );
+    } catch (e) {
+      debugPrint('getProductStores: ошибка ($e)');
+      return const ProductStores(stores: [], moscowNote: null);
+    }
+  }
+
 
   // -------------------------------------------------------
   // собрать товары из всех дочерних секций
@@ -247,39 +298,31 @@ class ProductsRepository {
   // Фильтры — офлайн-замена get_filters.php / get_products_filtered.php
   // -------------------------------------------------------
 
-  // Те же коды, что в get_filters.php на сервере. Список ДЛИННЕЕ, чем
-  // skipCodes в get_products.php/get_products_full.php — то есть эти
-  // свойства МОГУТ присутствовать в закэшированных props у товара, но не
-  // должны предлагаться как варианты фильтра (сервер их тоже скрывает).
-  static const _filterSkipCodes = {
-    'CML2_BAR_CODE','CML2_TRAITS','CML2_BASE_UNIT','CML2_TAXES',
-    'CML2_MANUFACTURER','CML2_ARTICLE','MORE_PHOTO','FILES',
-    'ANALOGI_NE_S_1S','ANALOGI_TOVARA','IDENTIFIKATORNOMENKLATURY',
-    'IDENTIFIKATOR_NA_SAYTE','BLOG_POST_ID','BLOG_COMMENTS_CNT',
-    'vote_count','vote_sum','rating','GOLOSOVANIE_OTSENKA',
-    'GOLOSOVANIE_KOLICHESTVO_GOLOSOV','SORTIROVKA','AUTOSORT_TEST',
-    'AUTOSORT_TEST_LAMP','AUTOSORT_ACTION','AUTOSORT_NOVINKI',
-    'AUTOSORT_BRAND','POKAZYVAT_NA_GLAVNOY','VYVODIT_V_POPULYARNYKH_TOVARAKH',
-    'SKLAD','KOD_OZON','KOD_TNVED','BUF','_AVS_ANALIZ',
-    'KOEFFITSIENT_PO_KHRANENIYU_KOROBOK','STARAYA_TSENA',
-    'SROK_OKONCHANIYA_AKTSII','PRICHINA_UTSENKI','GRUPPA_ANALOGOV',
-    'SKIDKA_ORYNBOR','MINIMALNAYA_TSENA','KUPIT_V_CREDIT','KUPIT_V_KREDIT',
-    'AVTOMATICHESKAYA_SORTIROVKA','DATA_OBNOVLENIYA_IZOBRAZHENIY',
-    'METKI_','METKI','_RASPRODAZHA','_NALICHIYE___','MAYTONI_B2B_AVAILABILITY',
-    'NOVINKA_FIDA','K123','FAYLY_PNG','FAYLY_INTERERA','FAYLY_ZHIVYE_FOTO',
-    'INSTRUKCIA','VIDEO_ROLIK','KOD_NOMENKLATURY','KOD_STRANY_DLYA_SHTRIKHKODOV',
-    'STARYY_ARTIKUL','NOVOE_NAIMENOVANIE','SERTIFIKAT','OSTATOK','VIDIMOST',
-    'GARANTIYA','VES','SHIRINA_UPAKOVKI_SM','DLINA_UPAKOVKI_SM',
-    'VYSOTA_UPAKOVKI_SM','RAZDEL_NA_SAYTE','KATEGORIYATOVARA','VYSOTA_MM_1',
-    'MATERIALY_SVETILNIKA',
+  // Allow-list: те же коды, что в get_filters.php на сервере — только эти
+  // свойства предлагаются как фильтр (список задан явно, с нуля).
+  static const _filterAllowCodes = {
+    'BREND','STRANA','PLOSHCHAD_OSVESHCHENIYA_M2','INTERER','_NALICHIYE___',
+    'VISOTA_POTOLKOV_V_POMESHENII','PODKHODIT_DLYA_NIZKIKH_POTOLKOV','NOVINKA',
+    'STIL_OSVESHCHENIYA','NALICHIE_DATCHIKA_DVIZHENIYA','OBLAKO_METOK',
+    'MATERIAL_PLAFONOV','MATERIAL_ARMATURY','TSVET_PLAFONOV','TSVET_ARMATURY',
+    'DIAMETR_MM','DLINA_SHNURA_M','DLINA_MM','GLUBINA_MM','SHIRINA_MM','VYSOTA_MM',
+    'AKTSIYA','VYSOTA_VSTRAIVAEMOY_CHASTI_MM','DIAMETR_VREZNOGO_OTVERSTIYA_MM',
+    'MOSHCHNOST_1_LAMPY_W','OBSHCHAYA_MOSHCHNOST_SVETILNIKA_W','STATUS',
+    'TIP_TSOKOLYA','VKHODNOE_NAPRYAZHENIE_V','NALICHIE_DIMMERA','KOLICHESTVO_LAMP',
+    '_PODKHODIT_DLYA_NATYAZHNYKH_POTOLKOV','TIP_TOVARA','OBSHCHAYA_MOSHCHNOST_W',
+    'MOSHCHNOST_LAMPY_W','TIP_KREPLENIYA','TSVETOVAYA_TEMPERATURA_K',
+    '_DLINA_TSEPI_MM','STEPEN_ZASHCHITY_IP',
   };
 
-  // Те же коды, что в get_filters.php — свойства-"диапазоны" (мм/Вт/шт),
+  // Те же коды, что в get_filters.php — свойства-"диапазоны" (мм/Вт/В/м2/шт),
   // а не списки конкретных значений.
   static const _filterRangeCodes = {
-    'DLINA_MM','SHIRINA_MM','VYSOTA_MM','DIAMETR_MM','GLUBINA_MM',
-    'DLINA_SHNURA_M','PLOSHCHAD_OSVESHCHENIYA',
-    'OBSHCHAYA_MOSHCHNOST_SVETILNIKA_W','MOSHCHNOST_LAMPY_W','KOLICHESTVO_LAMP',
+    'PLOSHCHAD_OSVESHCHENIYA_M2','VISOTA_POTOLKOV_V_POMESHENII',
+    'DIAMETR_MM','DLINA_SHNURA_M','DLINA_MM','GLUBINA_MM','SHIRINA_MM','VYSOTA_MM',
+    'VYSOTA_VSTRAIVAEMOY_CHASTI_MM','DIAMETR_VREZNOGO_OTVERSTIYA_MM',
+    'MOSHCHNOST_1_LAMPY_W','OBSHCHAYA_MOSHCHNOST_SVETILNIKA_W',
+    'VKHODNOE_NAPRYAZHENIE_V','KOLICHESTVO_LAMP','OBSHCHAYA_MOSHCHNOST_W',
+    'MOSHCHNOST_LAMPY_W','TSVETOVAYA_TEMPERATURA_K','_DLINA_TSEPI_MM',
   };
 
   static const _filterSortPriority = {
@@ -299,6 +342,7 @@ class ProductsRepository {
     double priceMin = 0, priceMax = 0;
     bool priceSet = false;
     final listValues = <String, Set<String>>{};
+    final listValueCounts = <String, Map<String, int>>{}; // сейчас заполняется только для "В наличии"
     final propNames = <String, String>{};
     final rangeMin = <String, double>{};
     final rangeMax = <String, double>{};
@@ -315,18 +359,33 @@ class ProductsRepository {
 
       for (final entry in p.props.entries) {
         final code = entry.key;
-        if (_filterSkipCodes.contains(code)) continue;
-        final value = entry.value.value.trim();
-        if (value.isEmpty) continue;
+        if (!_filterAllowCodes.contains(code)) continue;
+        final rawValue = entry.value.value.trim();
+        if (rawValue.isEmpty) continue;
         propNames.putIfAbsent(code, () => entry.value.name);
 
         if (_filterRangeCodes.contains(code)) {
-          final n = double.tryParse(value);
+          final n = double.tryParse(rawValue);
           if (n == null || n <= 0) continue;
           if (!rangeMin.containsKey(code) || n < rangeMin[code]!) rangeMin[code] = n;
           if (!rangeMax.containsKey(code) || n > rangeMax[code]!) rangeMax[code] = n;
         } else {
-          (listValues[code] ??= <String>{}).add(value);
+          // "В наличии" — множественное свойство (товар может лежать сразу
+          // на нескольких складах), а get_products_full.php склеивает
+          // несколько значений через ", " в одну строку при кэшировании.
+          // Разбиваем обратно, иначе это считалось бы одним "составным"
+          // вариантом фильтра вместо нескольких отдельных складов, и
+          // счётчик по каждому складу был бы неверным.
+          final values = code == '_NALICHIYE___'
+              ? rawValue.split(',').map((v) => v.trim()).where((v) => v.isNotEmpty)
+              : [rawValue];
+          for (final value in values) {
+            (listValues[code] ??= <String>{}).add(value);
+            if (code == '_NALICHIYE___') {
+              final counts = listValueCounts[code] ??= <String, int>{};
+              counts[value] = (counts[value] ?? 0) + 1;
+            }
+          }
         }
       }
     }
@@ -335,7 +394,13 @@ class ProductsRepository {
     listValues.forEach((code, values) {
       if (values.isEmpty) return;
       final sorted = values.toList()..sort();
-      filters.add(FilterDef(code: code, name: propNames[code] ?? code, type: 'list', values: sorted));
+      filters.add(FilterDef(
+        code: code,
+        name: propNames[code] ?? code,
+        type: 'list',
+        values: sorted,
+        valueCounts: listValueCounts[code] ?? const {},
+      ));
     });
     rangeMax.forEach((code, mx) {
       final mn = rangeMin[code] ?? 0;

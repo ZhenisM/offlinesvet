@@ -113,7 +113,7 @@ class MenuScreen extends StatelessWidget {
           _divider(),
 
           _MenuItem(
-            icon: Icons.storefront_outlined,
+            svgAsset: 'assets/icons/shop.svg',
             label: 'Каталог',
             trailing: const Icon(Icons.arrow_forward_ios,
               size: 14, color: Colors.grey),

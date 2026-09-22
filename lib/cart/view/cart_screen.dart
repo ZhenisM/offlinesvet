@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart' show NoInternetException;
@@ -389,7 +390,9 @@ class _CartScreenState extends State<CartScreen> {
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.menu_outlined),
+          icon: SvgPicture.asset('assets/icons/menu.svg',
+              width: 24, height: 24,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
           onPressed: _menuOpen,
         ),
         title: const Text('Мультикорзина'),
@@ -742,7 +745,8 @@ class _CartItemTile extends StatelessWidget {
             children: [
               IconButton(
                 onPressed: onDelete,
-                icon: Icon(Icons.delete_outline, color: Colors.grey.shade500),
+                icon: SvgPicture.asset('assets/icons/trash.svg', width: 22, height: 22,
+                    colorFilter: ColorFilter.mode(Colors.grey.shade500, BlendMode.srcIn)),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               ),
@@ -1094,10 +1098,9 @@ class _CartSelectorTile extends StatelessWidget {
                       )
                     : IconButton(
                         onPressed: onDelete,
-                        icon: Icon(
-                          Icons.delete_outline,
-                          color: isActive ? Colors.white : Colors.grey.shade600,
-                        ),
+                        icon: SvgPicture.asset('assets/icons/trash.svg', width: 22, height: 22,
+                            colorFilter: ColorFilter.mode(
+                                isActive ? Colors.white : Colors.grey.shade600, BlendMode.srcIn)),
                       ),
               ],
             ),

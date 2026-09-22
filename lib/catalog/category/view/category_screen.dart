@@ -144,7 +144,9 @@ class _CategoryScreenState extends State<CategoryScreen> {
         actions: [
           const CatalogSearchBar(),
           IconButton(
-            icon: const Icon(Icons.menu_outlined),
+            icon: SvgPicture.asset('assets/icons/menu.svg',
+                width: 24, height: 24,
+                colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
             onPressed: _menuOpen,
           ),
         ],

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/auth/auth_service.dart';
@@ -186,7 +187,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Column(children: [
               _MenuItem(
-                icon: Icons.insert_chart_outlined,
+                svgAsset: 'assets/icons/document.svg',
                 label: 'Мои успехи',
                 onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const StatsScreen(fromProfile: true))),
@@ -241,8 +242,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 class _MenuItem extends StatelessWidget {
-  const _MenuItem({required this.icon, required this.label, required this.onTap});
-  final IconData icon;
+  const _MenuItem({this.icon, this.svgAsset, required this.label, required this.onTap});
+  final IconData? icon; // используется, если svgAsset не задан
+  final String? svgAsset;
   final String label;
   final VoidCallback onTap;
 
@@ -254,7 +256,10 @@ class _MenuItem extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(children: [
-          Icon(icon, color: const Color(0xFF4CAF50), size: 24),
+          svgAsset != null
+              ? SvgPicture.asset(svgAsset!, width: 24, height: 24,
+                  colorFilter: const ColorFilter.mode(Color(0xFF4CAF50), BlendMode.srcIn))
+              : Icon(icon, color: const Color(0xFF4CAF50), size: 24),
           const SizedBox(width: 16),
           Expanded(
             child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
