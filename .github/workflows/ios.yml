@@ -81,7 +81,7 @@ jobs:
           EOF
 
       - name: Flutter Build (Prepare, No Codesign)
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
 
       - name: Archive with Manual Signing
         run: |
