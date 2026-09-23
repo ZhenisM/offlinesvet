@@ -38,6 +38,85 @@ const Map<String, String> leadSources = {
   '76585': 'Другое',
 };
 
+// -------------------------------------------------------
+// Поля для формы "Некачественный лид" — та же общая CRM, что и у красок
+// (коды и ID значений сверены через crm.lead.fields напрямую в Bitrix24,
+// а не переиспользованы из формы красок — там для части полей отдельные
+// коды с пометкой "(КРАСКИ)"). Взяты версии "(СВЕТ)" там, где они есть
+// отдельно (Пол, Психотип) — по аналогии с _typeFieldCode выше, который
+// тоже "(СВЕТ)", а не "(КРАСКИ)".
+// -------------------------------------------------------
+
+/// "Сколько человек было с клиентом" — одиночный выбор.
+const _peopleCountFieldCode = 'UF_CRM_1636358700';
+const Map<String, String> peopleCountOptions = {
+  '79087': 'Сам клиент',
+  '13621': '1 (один)',
+  '13623': '2 (два)',
+  '13625': '3 (три)',
+  '13627': '4 (четыре)',
+  '13629': '5 (пять)',
+  '13631': '6 (шесть)',
+  '14105': 'Семья',
+};
+/// Если выбрано это значение — поле "Кто был с клиентом" не нужно (сам
+/// клиент, больше некому быть) — так же скрывается и на сайте.
+const String peopleCountAloneId = '79087';
+
+/// "Кто был с клиентом" — множественный выбор, показывается только если
+/// peopleCount != peopleCountAloneId.
+const _whoWasWithFieldCode = 'UF_CRM_1636547473';
+const Map<String, String> whoWasWithOptions = {
+  '14107': 'Мужчина',
+  '14109': 'Женщина',
+  '14111': 'Бабушка',
+  '14113': 'Дедушка',
+  '14115': 'Ребенок',
+  '14117': 'Девушка',
+  '14119': 'Парень',
+};
+
+/// "Пол клиента" — одиночный выбор.
+const _genderFieldCode = 'UF_CRM_1533875517'; // "Пол(СВЕТ)"
+const Map<String, String> genderOptions = {
+  '210': 'Мужчина',
+  '212': 'Женщина',
+  '3971': 'Семья',
+};
+
+/// "Возраст клиента" — одиночный выбор (общее поле, отдельного "(СВЕТ)" нет).
+const _ageFieldCode = 'UF_CRM_1636539997';
+const Map<String, String> ageOptions = {
+  '14055': '25-35 лет',
+  '14057': '35-45 лет',
+  '14059': '45-55 лет',
+  '14061': '55 и старше',
+};
+
+/// "Психотип клиента" — множественный выбор.
+const _psychotypeFieldCode = 'UF_CRM_1565330412870'; // "Психотип Клиента (СВЕТ)"
+const Map<String, String> psychotypeOptions = {
+  '2031': 'Аудиал',
+  '2033': 'Визуал',
+  '2035': 'Кинестетик',
+  '16835': 'Дигитал',
+};
+
+/// "Причина провала Лида" — множественный выбор.
+const _failReasonFieldCode = 'UF_CRM_1739347472';
+const Map<String, String> failReasonOptions = {
+  '79113': 'Клиент отказался предоставить данные',
+  '79115': 'Отсутствие интереса',
+  '79117': 'Нет в ассортименте',
+  '79119': 'Дорого (цену озвучил)',
+  '79121': 'Не готов к покупкам',
+  '79123': 'Просто интересовался',
+};
+
+/// Статус лида "Некачественный лид" — системное поле STATUS_ID (не
+/// кастомное UF_CRM_...), сверено через crm.status.list.
+const String badLeadStatusId = 'JUNK';
+
 /// Исключение — нет подключения к интернету. Отдельный тип, чтобы UI
 /// мог показать именно "Нет интернета", а не общую ошибку сети.
 class NoInternetException implements Exception {
@@ -234,6 +313,58 @@ class BitrixService {
       return leadId;
     } on DioException catch (e) {
       debugPrint('createLead: ошибка сети: $e');
+      throw BitrixApiException('Не удалось создать лид в Bitrix');
+    }
+  }
+
+  /// "Некачественный лид" — отдельная короткая анкета для случаев, когда
+  /// сделка не состоялась (клиент отказался от общения, ушёл без покупки
+  /// и т.п.). В отличие от createLead(), НЕ создаёт контакт и не требует
+  /// имя/телефон — сайт тоже не спрашивает контактные данные на этом
+  /// сценарии (одна из причин провала — "Клиент отказался предоставить
+  /// данные"). STATUS_ID выставляется сразу в "Некачественный лид"
+  /// (badLeadStatusId) и в самой форме не выбирается.
+  Future<String> createBadLead({
+    String comment = '',
+    String? peopleCount,
+    List<String> whoWasWith = const [],
+    String? gender,
+    String? age,
+    List<String> psychotype = const [],
+    List<String> failReasons = const [],
+  }) async {
+    await _requireInternet();
+
+    try {
+      final response = await dio.post(
+        '$_bitrixWebhookUrl/crm.lead.add.json',
+        data: {
+          'fields': {
+            'TITLE': 'Некачественный лид (приложение)',
+            'STATUS_ID': badLeadStatusId,
+            'COMMENTS': comment,
+            if (peopleCount != null) _peopleCountFieldCode: peopleCount,
+            if (whoWasWith.isNotEmpty) _whoWasWithFieldCode: whoWasWith,
+            if (gender != null) _genderFieldCode: gender,
+            if (age != null) _ageFieldCode: age,
+            if (psychotype.isNotEmpty) _psychotypeFieldCode: psychotype,
+            if (failReasons.isNotEmpty) _failReasonFieldCode: failReasons,
+          },
+        },
+      );
+
+      final data = _unwrapResult(response);
+      final leadId = data['result'].toString();
+
+      // Та же логика, что и в createLead() — чтобы кнопка "Записать
+      // разговор" могла прикрепить запись именно к этому лиду.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_lead_id', leadId);
+      await prefs.setInt('last_lead_created_at', DateTime.now().millisecondsSinceEpoch);
+
+      return leadId;
+    } on DioException catch (e) {
+      debugPrint('createBadLead: ошибка сети: $e');
       throw BitrixApiException('Не удалось создать лид в Bitrix');
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:offlinesvet/auth/auth_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/view/new_customer_dialog.dart';
+import 'package:offlinesvet/customer/view/bad_lead_dialog.dart';
 import 'package:offlinesvet/customer/view/search_customer_screen.dart';
 import 'package:offlinesvet/repositories/products/catalog_sync_service.dart';
 import 'package:offlinesvet/common/call_recorder_button.dart';
@@ -59,6 +60,10 @@ class _MainScreenState extends State<MainScreen> {
     if (selected == true) {
       _loadActiveCustomer();
     }
+  }
+
+  Future<void> _openBadLead() async {
+    await showBadLeadDialog(context);
   }
 
   Future<void> _confirmLogout() async {
@@ -166,6 +171,29 @@ class _MainScreenState extends State<MainScreen> {
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: Colors.black87,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Некачественный лид — красная, короткая анкета без сбора
+            // контактных данных (клиент мог отказаться их предоставить).
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _openBadLead,
+                icon: const Icon(Icons.thumb_down_outlined),
+                label: const Text(
+                  'Некачественный лид',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFE53935),
+                  foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
