@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:offlinesvet/auth/auth_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/view/new_customer_dialog.dart';
@@ -209,6 +210,15 @@ class _MainScreenState extends State<MainScreen> {
             // она прикрепится к этому лиду в Bitrix (см. CallRecorderButton).
             const CallRecorderButton(),
           ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFFE53935),
+        onPressed: () => Navigator.of(context).pushNamed('/profile'),
+        child: SvgPicture.asset(
+          'assets/icons/document.svg',
+          width: 24, height: 24,
+          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
         ),
       ),
     );

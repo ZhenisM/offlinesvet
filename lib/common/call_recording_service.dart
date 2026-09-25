@@ -147,7 +147,23 @@ class CallRecordingService {
     final filePath = await stop();
     if (filePath == null) return;
 
-    final bytes = await File(filePath).readAsBytes();
+    await attachRecordingFileToLead(filePath, leadId);
+  }
+
+  /// То же самое, что вторая половина stopAndAttachToLead() — но принимает
+  /// УЖЕ остановленную запись (путь к файлу), а не текущую. Нужен для
+  /// фоновой очереди (BadLeadQueue): запись останавливается сразу же на
+  /// экране (мгновенно, без сети), а прикрепление к лиду происходит уже
+  /// позже, в фоне, когда лид реально создан.
+  ///
+  /// ВАЖНО: если отправка не удалась — исключение прокидывается
+  /// вызывающему коду, файл НЕ удаляется (чтобы можно было повторить
+  /// позже, а не потерять запись молча).
+  Future<void> attachRecordingFileToLead(String filePath, String leadId) async {
+    final file = File(filePath);
+    if (!await file.exists()) return;
+
+    final bytes = await file.readAsBytes();
     final base64Content = base64Encode(bytes);
     final filename = 'call_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
@@ -157,7 +173,7 @@ class CallRecordingService {
       filename: filename,
     );
 
-    try { await File(filePath).delete(); } catch (_) {}
+    try { await file.delete(); } catch (_) {}
   }
 
   // -------------------------------------------------------

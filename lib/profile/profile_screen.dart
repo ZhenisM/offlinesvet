@@ -187,6 +187,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             child: Column(children: [
               _MenuItem(
+                svgAsset: 'assets/icons/shop.svg',
+                label: 'Каталог',
+                onTap: () => Navigator.of(context).pushNamed('/products-list'),
+              ),
+              const Divider(height: 1, indent: 56),
+              _MenuItem(
                 svgAsset: 'assets/icons/document.svg',
                 label: 'Мои успехи',
                 onTap: () => Navigator.push(context,

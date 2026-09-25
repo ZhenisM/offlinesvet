@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
+import 'package:offlinesvet/customer/bad_lead_queue.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
 
 Future<bool?> showBadLeadDialog(BuildContext context) {
@@ -24,7 +24,6 @@ class BadLeadSheet extends StatefulWidget {
 }
 
 class _BadLeadSheetState extends State<BadLeadSheet> {
-  final _bitrixService = BitrixService(dio: Dio());
   final _titleController = TextEditingController();
   final _commentController = TextEditingController();
 
@@ -53,17 +52,28 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
       _psychotype.isNotEmpty &&
       _failReasons.isNotEmpty;
 
+  /// Отправка теперь НЕ ждёт сеть/Bitrix вообще — задача мгновенно ложится
+  /// в фоновую очередь (BadLeadQueue), а форма сразу закрывается. Это
+  /// значит, что менеджер может тут же открыть следующую анкету, не
+  /// дожидаясь ответа от Bitrix (особенно важно при плохом интернете).
+  /// Запись разговора (если шла) останавливается прямо здесь, мгновенно
+  /// и локально — сама отправка файла в Bitrix, привязанная именно к
+  /// ЭТОМУ лиду, произойдёт уже в фоне, когда лид будет создан.
   Future<void> _submit() async {
     if (!_canSubmit) return;
     setState(() { _loading = true; _error = null; });
 
     try {
       final managerName = await CustomerStorage.currentManagerName();
-      final managerId = managerName != null
-          ? await _bitrixService.findUserIdByName(managerName)
-          : null;
       final title = _titleController.text.trim();
-      final leadId = await _bitrixService.createBadLead(
+
+      String? recordingPath;
+      if (CallRecordingService.instance.isRecording.value) {
+        recordingPath = await CallRecordingService.instance.stop();
+      }
+
+      await BadLeadQueue.instance.enqueue(PendingBadLeadJob(
+        id: '${DateTime.now().microsecondsSinceEpoch}',
         title: title.isNotEmpty ? title : null,
         comment: _commentController.text.trim(),
         peopleCount: _peopleCount,
@@ -72,29 +82,16 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
         age: _age,
         psychotype: _psychotype.toList(),
         failReasons: _failReasons.toList(),
-        managerId: managerId,
-      );
-
-      // Та же логика, что и в анкете обычного лида: если шла запись
-      // разговора — останавливаем и прикрепляем к этому лиду. Ошибку
-      // отправки записи не считаем ошибкой создания лида.
-      try {
-        await CallRecordingService.instance.stopAndAttachToLead(leadId);
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Лид создан, но запись разговора не отправилась: $e')),
-          );
-        }
-      }
+        managerName: managerName,
+        recordingPath: recordingPath,
+        createdAt: DateTime.now(),
+      ));
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Лид сохранён')),
+        const SnackBar(content: Text('Лид добавлен в очередь на отправку')),
       );
-    } on NoInternetException {
-      setState(() { _error = 'Нет интернета'; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
     }
