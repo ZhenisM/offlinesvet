@@ -270,6 +270,86 @@ class BitrixService {
   // Лиды
   // -------------------------------------------------------
 
+  /// Ищет пользователя Bitrix24 по ФИО — нужен, потому что user_id менеджера
+  /// в приложении берётся из другой системы (prons.kz, 1C-Bitrix) и НЕ
+  /// совпадает с ID того же человека в Bitrix24 (два разных продукта,
+  /// независимая нумерация пользователей). Возвращает null, если совпадений
+  /// нет или их несколько (чтобы не назначить лид не тому человеку наугад).
+  ///
+  /// ВАЖНО: user_name хранится строкой вида "Фамилия Имя" (например,
+  /// "Леготкин Максим"), а в самом Bitrix24 это два ОТДЕЛЬНЫХ поля (NAME,
+  /// LAST_NAME) — такая же точная строка "Леготкин Максим" нигде в
+  /// профиле не хранится целиком, поэтому широкий FILTER[FIND] по всей
+  /// строке её не находит. Разбиваем на слова и ищем прицельно по полям.
+  Future<int?> findUserIdByName(String fullName) async {
+    final parts = fullName.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return null;
+
+    // user_name хранится как "Фамилия Имя" — для обычного случая (без
+    // отчества) это ровно два слова.
+    if (parts.length == 2) {
+      final byOrder1 = await _findUserId(lastName: parts[0], name: parts[1]);
+      if (byOrder1 != null) return byOrder1;
+      // На случай если где-то ФИО сохранено в обратном порядке ("Имя Фамилия").
+      final byOrder2 = await _findUserId(lastName: parts[1], name: parts[0]);
+      if (byOrder2 != null) return byOrder2;
+    }
+
+    // Запасной вариант (три и более слова — с отчеством, или одно слово) —
+    // широкий поиск по всей строке через user.search.
+    return _findUserIdByFind(fullName);
+  }
+
+  Future<int?> _findUserId({required String lastName, required String name}) async {
+    try {
+      final response = await dio.get(
+        '$_bitrixWebhookUrl/user.get.json',
+        queryParameters: {
+          'FILTER[NAME]': name,
+          'FILTER[LAST_NAME]': lastName,
+        },
+      );
+      final data = _unwrapResult(response);
+      final results = data['result'] as List<dynamic>?;
+      if (results == null || results.isEmpty) return null;
+      if (results.length > 1) {
+        debugPrint('findUserIdByName: неоднозначно — найдено ${results.length} '
+            'пользователей Bitrix24 по имени "$name $lastName", пропускаю ASSIGNED_BY_ID');
+        return null;
+      }
+      final id = results.first['ID'];
+      return int.tryParse(id.toString());
+    } catch (e) {
+      debugPrint('findUserIdByName: ошибка user.get ($e)');
+      return null;
+    }
+  }
+
+  Future<int?> _findUserIdByFind(String fullName) async {
+    try {
+      final response = await dio.get(
+        '$_bitrixWebhookUrl/user.search.json',
+        queryParameters: {'FILTER[FIND]': fullName},
+      );
+      final data = _unwrapResult(response);
+      final results = data['result'] as List<dynamic>?;
+      if (results == null || results.isEmpty) {
+        debugPrint('findUserIdByName: пользователь Bitrix24 не найден по имени "$fullName"');
+        return null;
+      }
+      if (results.length > 1) {
+        debugPrint('findUserIdByName: неоднозначно — найдено ${results.length} '
+            'пользователей Bitrix24 по имени "$fullName", пропускаю ASSIGNED_BY_ID');
+        return null;
+      }
+      final id = results.first['ID'];
+      return int.tryParse(id.toString());
+    } catch (e) {
+      debugPrint('findUserIdByName: ошибка user.search ($e)');
+      return null;
+    }
+  }
+
   /// Создаёт лид, привязанный к контакту. Возвращает ID созданного лида.
   Future<String> createLead({
     required String contactId,
@@ -278,6 +358,7 @@ class BitrixService {
     required CustomerType type,
     String comment = '',
     String sourceId = defaultSourceId,
+    int? managerId,
   }) async {
     await _requireInternet();
 
@@ -295,6 +376,10 @@ class BitrixService {
             'CONTACT_ID': contactId,
             _typeFieldCode: type.bitrixFieldId,
             _sourceFieldCode: [sourceId],
+            // Без этого поля Bitrix назначает ответственным того, на кого
+            // настроен сам вебхук — а не менеджера, который реально
+            // авторизован в приложении и создал лид.
+            if (managerId != null) 'ASSIGNED_BY_ID': managerId,
           },
         },
       );
@@ -325,6 +410,7 @@ class BitrixService {
   /// данные"). STATUS_ID выставляется сразу в "Некачественный лид"
   /// (badLeadStatusId) и в самой форме не выбирается.
   Future<String> createBadLead({
+    String? title,
     String comment = '',
     String? peopleCount,
     List<String> whoWasWith = const [],
@@ -332,6 +418,7 @@ class BitrixService {
     String? age,
     List<String> psychotype = const [],
     List<String> failReasons = const [],
+    int? managerId,
   }) async {
     await _requireInternet();
 
@@ -340,9 +427,13 @@ class BitrixService {
         '$_bitrixWebhookUrl/crm.lead.add.json',
         data: {
           'fields': {
-            'TITLE': 'Некачественный лид (приложение)',
+            'TITLE': (title != null && title.isNotEmpty) ? title : 'Некачественный лид (приложение)',
             'STATUS_ID': badLeadStatusId,
             'COMMENTS': comment,
+            // Без этого поля Bitrix назначает ответственным того, на кого
+            // настроен сам вебхук — а не менеджера, который реально
+            // авторизован в приложении и создал лид.
+            if (managerId != null) 'ASSIGNED_BY_ID': managerId,
             if (peopleCount != null) _peopleCountFieldCode: peopleCount,
             if (whoWasWith.isNotEmpty) _whoWasWithFieldCode: whoWasWith,
             if (gender != null) _genderFieldCode: gender,

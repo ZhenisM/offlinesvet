@@ -31,6 +31,18 @@ class CustomerStorage {
     return int.tryParse(raw);
   }
 
+  /// ФИО менеджера, как его вернул login.php (сохраняется как user_name).
+  /// ВАЖНО: это ID/ФИО именно в системе prons.kz (1C-Bitrix), а не в
+  /// Bitrix24 — это два разных продукта с независимой нумерацией
+  /// пользователей, даже если это один и тот же человек. Поэтому для
+  /// ASSIGNED_BY_ID в Bitrix24-лидах нужно искать пользователя по имени
+  /// (BitrixService.findUserIdByName), а не подставлять currentManagerId()
+  /// напрямую.
+  static Future<String?> currentManagerName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('user_name');
+  }
+
   /// Список всех клиентов, выбранных/созданных текущим менеджером.
   static Future<List<Customer>> loadAll() async {
     final userId = await _currentUserId();

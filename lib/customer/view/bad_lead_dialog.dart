@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
+import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
 
 Future<bool?> showBadLeadDialog(BuildContext context) {
@@ -24,6 +25,7 @@ class BadLeadSheet extends StatefulWidget {
 
 class _BadLeadSheetState extends State<BadLeadSheet> {
   final _bitrixService = BitrixService(dio: Dio());
+  final _titleController = TextEditingController();
   final _commentController = TextEditingController();
 
   String? _peopleCount;
@@ -38,6 +40,7 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
 
   @override
   void dispose() {
+    _titleController.dispose();
     _commentController.dispose();
     super.dispose();
   }
@@ -55,7 +58,13 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
     setState(() { _loading = true; _error = null; });
 
     try {
+      final managerName = await CustomerStorage.currentManagerName();
+      final managerId = managerName != null
+          ? await _bitrixService.findUserIdByName(managerName)
+          : null;
+      final title = _titleController.text.trim();
       final leadId = await _bitrixService.createBadLead(
+        title: title.isNotEmpty ? title : null,
         comment: _commentController.text.trim(),
         peopleCount: _peopleCount,
         whoWasWith: _whoWasWith.toList(),
@@ -63,6 +72,7 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
         age: _age,
         psychotype: _psychotype.toList(),
         failReasons: _failReasons.toList(),
+        managerId: managerId,
       );
 
       // Та же логика, что и в анкете обычного лида: если шла запись
@@ -131,6 +141,24 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                _SectionTitle('Название лида'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _titleController,
+                  decoration: InputDecoration(
+                    hintText: 'Некачественный лид (приложение)',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 _SectionTitle('Сколько человек было с клиентом'),
                 _SingleChoiceChips(
