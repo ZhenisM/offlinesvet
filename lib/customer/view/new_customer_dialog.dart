@@ -253,35 +253,6 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
           ),
           const SizedBox(height: 16),
 
-          // Источник
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButtonFormField<String>(
-                value: _sourceId,
-                decoration: const InputDecoration(
-                  labelText: 'Источник (необязательно)',
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 14),
-                ),
-                isExpanded: true,
-                items: leadSources.entries
-                    .map((e) => DropdownMenuItem(
-                          value: e.key,
-                          child: Text(e.value, overflow: TextOverflow.ellipsis),
-                        ))
-                    .toList(),
-                onChanged: (v) => setState(() => _sourceId = v ?? defaultSourceId),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
           // Комментарий
           _WhiteInput(
             controller: _commentController,

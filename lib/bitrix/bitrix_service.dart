@@ -84,6 +84,19 @@ const Map<String, String> genderOptions = {
   '3971': 'Семья',
 };
 
+/// Есть ещё одно, отдельное поле "Пол клиента" (без пометки "(СВЕТ)",
+/// UF_CRM_1636347555) с теми же тремя вариантами, но своими ID — карточка
+/// лида в Bitrix24 явно показывает именно ЭТУ строку, а "Пол(СВЕТ)" не
+/// отображается заметно нигде в стандартном виде. Поэтому пишем в оба
+/// поля сразу — этот маппинг переводит ID из genderOptions в ID второго
+/// поля (те же три варианта, тот же порядок).
+const _genderFieldCode2 = 'UF_CRM_1636347555'; // "Пол клиента" (без пометки)
+const Map<String, String> _genderIdToGenderFieldCode2 = {
+  '210': '13555', // Мужчина
+  '212': '13557', // Женщина
+  '3971': '13559', // Семья
+};
+
 /// "Возраст клиента" — одиночный выбор (общее поле, отдельного "(СВЕТ)" нет).
 const _ageFieldCode = 'UF_CRM_1636539997';
 const Map<String, String> ageOptions = {
@@ -116,6 +129,14 @@ const Map<String, String> failReasonOptions = {
 /// Статус лида "Некачественный лид" — системное поле STATUS_ID (не
 /// кастомное UF_CRM_...), сверено через crm.status.list.
 const String badLeadStatusId = 'JUNK';
+
+/// Источник лида "Приложение Svet" — системное поле SOURCE_ID (не путать с
+/// UF_CRM_1673861444, это разные поля: SOURCE_ID — стандартное поле лида
+/// "Источник", а UF_CRM_1673861444 — отдельный кастомный справочник).
+/// Без явной простановки Bitrix подставляет первый по сортировке источник
+/// ("Витрина"), поэтому оба вида лида (обычный и некачественный) должны
+/// передавать это поле сами.
+const String appSourceId = 'UC_SY64LH';
 
 /// Исключение — нет подключения к интернету. Отдельный тип, чтобы UI
 /// мог показать именно "Нет интернета", а не общую ошибку сети.
@@ -368,6 +389,7 @@ class BitrixService {
         data: {
           'fields': {
             'TITLE': 'Новый клиент (приложение): $name',
+            'SOURCE_ID': appSourceId,
             'NAME': name,
             'PHONE': [
               {'VALUE': phone, 'VALUE_TYPE': 'WORK'},
@@ -428,6 +450,7 @@ class BitrixService {
         data: {
           'fields': {
             'TITLE': (title != null && title.isNotEmpty) ? title : 'Некачественный лид (приложение)',
+            'SOURCE_ID': appSourceId,
             'STATUS_ID': badLeadStatusId,
             'COMMENTS': comment,
             // Без этого поля Bitrix назначает ответственным того, на кого
@@ -437,6 +460,8 @@ class BitrixService {
             if (peopleCount != null) _peopleCountFieldCode: peopleCount,
             if (whoWasWith.isNotEmpty) _whoWasWithFieldCode: whoWasWith,
             if (gender != null) _genderFieldCode: gender,
+            if (gender != null && _genderIdToGenderFieldCode2[gender] != null)
+              _genderFieldCode2: _genderIdToGenderFieldCode2[gender],
             if (age != null) _ageFieldCode: age,
             if (psychotype.isNotEmpty) _psychotypeFieldCode: psychotype,
             if (failReasons.isNotEmpty) _failReasonFieldCode: failReasons,
