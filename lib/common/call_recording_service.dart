@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
+import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
 
 /// Синглтон, который владеет самой записью разговора. Раньше это жило
 /// внутри State виджета на главном экране — и при переходе в каталог
@@ -24,6 +25,20 @@ import 'package:offlinesvet/bitrix/bitrix_service.dart';
 ///    устройстве, пока корзину не оформят в заказ — тогда
 ///    attachPendingRecordingForCart() отправляет её в сделку, созданную
 ///    для этого заказа.
+/// Остановленная запись анкеты: файл + ID коммуникации + окно времени.
+class LeadFormRecording {
+  final String filePath;
+  final String communicationId;
+  final DateTime startedAt;
+  final DateTime endedAt;
+  const LeadFormRecording({
+    required this.filePath,
+    required this.communicationId,
+    required this.startedAt,
+    required this.endedAt,
+  });
+}
+
 class CallRecordingService {
   CallRecordingService._() {
     // Ловит АБСОЛЮТНО ЛЮБОЕ касание где угодно в приложении, независимо
@@ -41,6 +56,9 @@ class CallRecordingService {
   static final CallRecordingService instance = CallRecordingService._();
 
   static const _inactivityTimeout = Duration(minutes: 10);
+
+  /// Порог вложения записи в Bitrix: 30 МБ ≈ 5,2 мин WAV 48 кГц моно.
+  static const maxBitrixAttachBytes = 30 * 1000 * 1000;
 
   DateTime _lastActivityAt = DateTime.now();
   Timer? _inactivityChecker;
@@ -77,6 +95,13 @@ class CallRecordingService {
   Timer? _ticker;
   String? _currentFilePath;
 
+  /// ID коммуникации текущей записи — генерируется НАМИ в момент старта.
+  /// Это order_id для 4sell и ORIGIN_ID для лида в Bitrix.
+  String? _communicationId;
+  DateTime? _startedAt;
+
+  String? get currentCommunicationId => isRecording.value ? _communicationId : null;
+
   /// ID корзины, за которую сейчас идёт запись — null, если текущая
   /// запись не привязана к корзине (например, идёт под анкету лида).
   String? _recordingCartId;
@@ -87,14 +112,34 @@ class CallRecordingService {
 
   Future<bool> hasPermission() => _recorder.hasPermission();
 
-  Future<void> _startInternal() async {
+  Future<void> _startInternal({bool wav = true}) async {
     _lastActivityAt = DateTime.now();
     final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/call_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final ext = wav ? 'wav' : 'm4a';
+    final path = '${dir.path}/call_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-    await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+    // Разговор под анкету — WAV PCM 16-bit / 48 кГц / моно: родной формат
+    // 4sell, без конвертации на их стороне (≈5,8 МБ в минуту).
+    // Запись под корзину в 4sell не уходит — оставлена компактным AAC.
+    await _recorder.start(
+      wav
+          ? const RecordConfig(
+              encoder: AudioEncoder.wav,
+              sampleRate: 48000,
+              numChannels: 1,
+            )
+          : const RecordConfig(
+              encoder: AudioEncoder.aacLc,
+              sampleRate: 48000,
+              numChannels: 1,
+              bitRate: 64000,
+            ),
+      path: path,
+    );
 
     _currentFilePath = path;
+    _communicationId = newUuidV4();
+    _startedAt = DateTime.now();
     elapsed.value = Duration.zero;
     isRecording.value = true;
 
@@ -111,11 +156,46 @@ class CallRecordingService {
     await _startInternal();
   }
 
+  /// Автостарт при открытии "Анкеты лида" / "Некачественного лида".
+  /// Возвращает true, если запись начал именно этот вызов (а не шла уже
+  /// с кнопки "Записать разговор") — тогда экран анкеты "владеет" ею и
+  /// при закрытии без отправки должен вызвать discard().
+  Future<bool> startForLeadForm() async {
+    if (isRecording.value) return false;
+    if (!await _recorder.hasPermission()) return false;
+    _recordingCartId = null;
+    await _startInternal();
+    return true;
+  }
+
+  /// Остановка в момент отправки анкеты. Мгновенно, без сети.
+  Future<LeadFormRecording?> stopForLeadForm() async {
+    if (!isRecording.value) return null;
+    final commId = _communicationId;
+    final startedAt = _startedAt ?? DateTime.now();
+    final path = await stop();
+    if (path == null || commId == null) return null;
+    return LeadFormRecording(
+      filePath: path,
+      communicationId: commId,
+      startedAt: startedAt,
+      endedAt: DateTime.now(),
+    );
+  }
+
+  /// Анкету закрыли без отправки — лида нет, запись никуда не уходит.
+  Future<void> discard() async {
+    final path = await stop();
+    if (path != null) {
+      try { await File(path).delete(); } catch (_) {}
+    }
+  }
+
   /// Запись, привязанная к конкретной корзине (кнопка в нижней панели).
   Future<void> startForCart(String cartId) async {
     if (isRecording.value) return;
     _recordingCartId = cartId;
-    await _startInternal();
+    await _startInternal(wav: false);
   }
 
   /// Просто останавливает запись и возвращает путь к файлу, без
@@ -163,9 +243,23 @@ class CallRecordingService {
     final file = File(filePath);
     if (!await file.exists()) return;
 
+    // WAV тяжёлый: файл + base64 + JSON держатся в памяти одновременно
+    // (≈3,5× размера файла), на слабых Android это риск падения. Длинные
+    // разговоры в Bitrix не вкладываем — оригинал уходит в 4sell, а их
+    // транскрипция/резюме приходят в поля лида.
+    if (await file.length() > maxBitrixAttachBytes) {
+      await _bitrixService.addLeadComment(
+        leadId: leadId,
+        comment: 'Запись разговора слишком длинная для вложения — '
+            'отправлена в 4sell.ai (ID коммуникации в поле ORIGIN_ID лида).',
+      );
+      try { await file.delete(); } catch (_) {}
+      return;
+    }
+
     final bytes = await file.readAsBytes();
     final base64Content = base64Encode(bytes);
-    final filename = 'call_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final filename = 'call_${DateTime.now().millisecondsSinceEpoch}.${filePath.split('.').last}';
 
     await _bitrixService.attachRecordingToLead(
       leadId: leadId,
@@ -243,7 +337,7 @@ class CallRecordingService {
 
     final bytes = await file.readAsBytes();
     final base64Content = base64Encode(bytes);
-    final filename = 'call_cart${cartId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    final filename = 'call_cart${cartId}_${DateTime.now().millisecondsSinceEpoch}.${path.split('.').last}';
 
     await _bitrixService.attachRecordingToDeal(
       dealId: dealId,

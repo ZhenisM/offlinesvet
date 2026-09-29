@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/customer/models/customer_model.dart';
+import 'package:offlinesvet/foursell/foursell_config.dart';
 
 /// Базовый URL входящего вебхука Bitrix24.
 const String _bitrixWebhookUrl =
@@ -380,6 +381,7 @@ class BitrixService {
     String comment = '',
     String sourceId = defaultSourceId,
     int? managerId,
+    String? communicationId,
   }) async {
     await _requireInternet();
 
@@ -402,6 +404,13 @@ class BitrixService {
             // настроен сам вебхук — а не менеджера, который реально
             // авторизован в приложении и создал лид.
             if (managerId != null) 'ASSIGNED_BY_ID': managerId,
+            // Связка с записью в 4sell: ORIGIN_ID = наш ID коммуникации
+            // (он же order_id в 4sell). Стандартные поля Bitrix для ID
+            // из внешней системы — фильтруются в crm.lead.list.
+            if (communicationId != null) ...{
+              'ORIGINATOR_ID': FourSellConfig.bitrixOriginatorId,
+              'ORIGIN_ID': communicationId,
+            },
           },
         },
       );
@@ -441,6 +450,7 @@ class BitrixService {
     List<String> psychotype = const [],
     List<String> failReasons = const [],
     int? managerId,
+    String? communicationId,
   }) async {
     await _requireInternet();
 
@@ -465,6 +475,13 @@ class BitrixService {
             if (age != null) _ageFieldCode: age,
             if (psychotype.isNotEmpty) _psychotypeFieldCode: psychotype,
             if (failReasons.isNotEmpty) _failReasonFieldCode: failReasons,
+            // Связка с записью в 4sell: ORIGIN_ID = наш ID коммуникации
+            // (он же order_id в 4sell). Стандартные поля Bitrix для ID
+            // из внешней системы — фильтруются в crm.lead.list.
+            if (communicationId != null) ...{
+              'ORIGINATOR_ID': FourSellConfig.bitrixOriginatorId,
+              'ORIGIN_ID': communicationId,
+            },
           },
         },
       );
@@ -503,6 +520,23 @@ class BitrixService {
   // -------------------------------------------------------
   // Запись разговора
   // -------------------------------------------------------
+
+  /// Текстовый комментарий в таймлайне лида (без файла).
+  Future<void> addLeadComment({required String leadId, required String comment}) async {
+    await _requireInternet();
+    try {
+      final response = await dio.post(
+        '$_bitrixWebhookUrl/crm.timeline.comment.add.json',
+        data: {
+          'fields': {'ENTITY_ID': leadId, 'ENTITY_TYPE': 'lead', 'COMMENT': comment},
+        },
+      );
+      _unwrapResult(response);
+    } on DioException catch (e) {
+      debugPrint('addLeadComment: ошибка сети: $e');
+      throw BitrixApiException('Не удалось добавить комментарий к лиду в Bitrix');
+    }
+  }
 
   /// Прикрепляет аудиофайл записи разговора как комментарий с файлом
   /// к указанному лиду (crm.timeline.comment.add с полем FILES).

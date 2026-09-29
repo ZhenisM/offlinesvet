@@ -25,6 +25,8 @@ class PendingBadLeadJob {
   final List<String> failReasons;
   final String? managerName;
   final String? recordingPath;
+  /// Наш ID коммуникации (order_id в 4sell) → ORIGIN_ID лида.
+  final String? communicationId;
   final DateTime createdAt;
 
   PendingBadLeadJob({
@@ -39,6 +41,7 @@ class PendingBadLeadJob {
     required this.failReasons,
     required this.managerName,
     required this.recordingPath,
+    this.communicationId,
     required this.createdAt,
   });
 
@@ -54,6 +57,7 @@ class PendingBadLeadJob {
         'failReasons': failReasons,
         'managerName': managerName,
         'recordingPath': recordingPath,
+        'communicationId': communicationId,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -69,6 +73,7 @@ class PendingBadLeadJob {
         failReasons: (json['failReasons'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
         managerName: json['managerName'] as String?,
         recordingPath: json['recordingPath'] as String?,
+        communicationId: json['communicationId'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 }
@@ -153,6 +158,7 @@ class BadLeadQueue {
         psychotype: job.psychotype,
         failReasons: job.failReasons,
         managerId: managerId,
+        communicationId: job.communicationId,
       );
 
       if (job.recordingPath != null) {

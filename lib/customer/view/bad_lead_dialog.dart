@@ -3,6 +3,8 @@ import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/bad_lead_queue.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/foursell/foursell_api.dart';
+import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
 
 Future<bool?> showBadLeadDialog(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -37,8 +39,26 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
   bool _loading = false;
   String? _error;
 
+  bool _ownsRecording = false;
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Запись стартует сама при нажатии "Некачественный лид".
+    CallRecordingService.instance.startForLeadForm().then((started) {
+      _ownsRecording = started;
+      if (started && !mounted && !_submitted) {
+        CallRecordingService.instance.discard();
+      }
+    });
+  }
+
   @override
   void dispose() {
+    if (_ownsRecording && !_submitted) {
+      CallRecordingService.instance.discard();
+    }
     _titleController.dispose();
     _commentController.dispose();
     super.dispose();
@@ -67,9 +87,26 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
       final managerName = await CustomerStorage.currentManagerName();
       final title = _titleController.text.trim();
 
-      String? recordingPath;
-      if (CallRecordingService.instance.isRecording.value) {
-        recordingPath = await CallRecordingService.instance.stop();
+      _submitted = true;
+      final recording = await CallRecordingService.instance.stopForLeadForm();
+      final recordingPath = recording?.filePath;
+
+      // В 4sell лид не нужен — отправляем сразу, параллельно очереди
+      // Bitrix. Связь с лидом — через ORIGIN_ID = communicationId.
+      if (recording != null) {
+        try {
+          await FourSellUploadQueue.instance.enqueue(
+            communicationId: recording.communicationId,
+            recordingPath: recording.filePath,
+            startedAt: recording.startedAt,
+            endedAt: recording.endedAt,
+            employeeId: (await CustomerStorage.currentManagerId())?.toString(),
+            employeeName: managerName,
+            formKind: FourSellFormKind.badLead,
+          );
+        } catch (e) {
+          debugPrint('4sell enqueue: $e');
+        }
       }
 
       await BadLeadQueue.instance.enqueue(PendingBadLeadJob(
@@ -84,6 +121,7 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
         failReasons: _failReasons.toList(),
         managerName: managerName,
         recordingPath: recordingPath,
+        communicationId: recording?.communicationId,
         createdAt: DateTime.now(),
       ));
 

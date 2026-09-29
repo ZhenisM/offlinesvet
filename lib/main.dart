@@ -5,6 +5,7 @@ import 'package:offlinesvet/repositories/products/local_db.dart';
 import 'package:offlinesvet/sync/sync_service.dart';
 import 'package:offlinesvet/catalog/compare/compare_store.dart';
 import 'package:offlinesvet/customer/bad_lead_queue.dart';
+import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +23,9 @@ void main() async {
   // Подхватываем некачественные лиды, оставшиеся неотправленными с
   // прошлого запуска (например, приложение закрыли при плохом интернете).
   BadLeadQueue.instance.restore();
+
+  // Записи разговоров, не доехавшие до 4sell в прошлый запуск.
+  FourSellUploadQueue.instance.restore();
 
   runApp(MaterialApp(
     theme: darkTheme,

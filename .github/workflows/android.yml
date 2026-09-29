@@ -38,10 +38,10 @@ jobs:
       #   run: flutter analyze
 
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=FOURSELL_API_KEY=${{ secrets.FOURSELL_API_KEY }}
 
       - name: Build AppBundle
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --dart-define=FOURSELL_API_KEY=${{ secrets.FOURSELL_API_KEY }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
