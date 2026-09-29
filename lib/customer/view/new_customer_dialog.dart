@@ -136,7 +136,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
       // Вложение в Bitrix — в фоне: WAV весит ≈5,8 МБ/мин, ждать его
       // загрузку на экране анкеты при плохом интернете нельзя.
       if (recording != null) {
-        final messenger = ScaffoldMessenger.maybeOf(context);
+        final messenger = mounted ? ScaffoldMessenger.maybeOf(context) : null;
         unawaited(CallRecordingService.instance
             .attachRecordingFileToLead(recording.filePath, leadId)
             .catchError((Object e) {
