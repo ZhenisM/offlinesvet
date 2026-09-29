@@ -31,7 +31,12 @@ class FourSellApi {
               connectTimeout: const Duration(seconds: 15),
               sendTimeout: const Duration(minutes: 15),
               receiveTimeout: const Duration(seconds: 30),
-              headers: {'X-API-Key': FourSellConfig.apiKey},
+              headers: {
+                'X-API-Key': FourSellConfig.apiKey,
+                // Laravel без этого отвечает на ошибки HTML-страницей, а не
+                // JSON с message/errors — в логах не видно причины 422.
+                'Accept': 'application/json',
+              },
             ));
 
   final Dio _dio;

@@ -12,10 +12,11 @@ class FourSellConfig {
 
   static const String apiKey = String.fromEnvironment('FOURSELL_API_KEY');
 
-  /// Значение по умолчанию из их примеров — подтвердить у 4sell.
+  /// Боевой адрес, выданный 4sell (в их openapi.yaml был шаблонный
+  /// integration-api.4sell.ai — такого домена нет в DNS).
   static const String baseUrl = String.fromEnvironment(
     'FOURSELL_BASE_URL',
-    defaultValue: 'https://integration-api.4sell.ai',
+    defaultValue: 'https://integration-api.k1.4sell.ai',
   );
 
   static const String apiPrefix = '/api/v1/integration';
