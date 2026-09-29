@@ -65,12 +65,17 @@ class CallRecorderButton extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 if (isRecording)
-                  ValueListenableBuilder<Duration>(
-                    valueListenable: service.elapsed,
-                    builder: (context, elapsed, _) => Text(
-                      'Идёт запись — ${_fmtDuration(elapsed)}. Сохраните анкету, '
-                      'чтобы прикрепить, или нажмите здесь, чтобы остановить без привязки.',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.red),
+                  // Flexible + перенос строк: иначе длинный текст вылезает за
+                  // экран (RenderFlex overflowed). Запись теперь стартует сама
+                  // из анкеты, поэтому текст короткий.
+                  Flexible(
+                    child: ValueListenableBuilder<Duration>(
+                      valueListenable: service.elapsed,
+                      builder: (context, elapsed, _) => Text(
+                        'Идёт запись — ${_fmtDuration(elapsed)}',
+                        softWrap: true,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.red),
+                      ),
                     ),
                   )
                 else
