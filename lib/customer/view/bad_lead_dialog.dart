@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/common/phone_mask_formatter.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/bad_lead_queue.dart';
@@ -27,6 +28,8 @@ class BadLeadSheet extends StatefulWidget {
 
 class _BadLeadSheetState extends State<BadLeadSheet> {
   final _titleController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _commentController = TextEditingController();
 
   String? _peopleCount;
@@ -60,6 +63,8 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
       CallRecordingService.instance.discard();
     }
     _titleController.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
     _commentController.dispose();
     super.dispose();
   }
@@ -80,6 +85,13 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
   /// и локально — сама отправка файла в Bitrix, привязанная именно к
   /// ЭТОМУ лиду, произойдёт уже в фоне, когда лид будет создан.
   Future<void> _submit() async {
+    final phoneText = _phoneController.text.trim();
+    if (phoneText.isNotEmpty && !KzPhoneMaskFormatter.isComplete(phoneText)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Телефон введён не полностью — допишите номер или очистите поле')));
+      return;
+    }
+
     if (!_canSubmit) return;
     setState(() { _loading = true; _error = null; });
 
@@ -122,6 +134,8 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
         managerName: managerName,
         recordingPath: recordingPath,
         communicationId: recording?.communicationId,
+        clientName: _nameController.text.trim().isEmpty ? null : _nameController.text.trim(),
+        clientPhone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
         createdAt: DateTime.now(),
       ));
 
@@ -134,6 +148,18 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
       setState(() { _error = e.toString(); _loading = false; });
     }
   }
+
+  InputDecoration _optionalFieldDecoration(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey.shade400),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -176,6 +202,29 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                _SectionTitle('Клиент (необязательно)'),
+                const SizedBox(height: 4),
+                Text(
+                  'Для существующих клиентов',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _nameController,
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  decoration: _optionalFieldDecoration('Имя'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  inputFormatters: [KzPhoneMaskFormatter()],
+                  decoration: _optionalFieldDecoration('+7 (___) ___-__-__'),
+                ),
+                const SizedBox(height: 16),
 
                 _SectionTitle('Название лида'),
                 const SizedBox(height: 8),

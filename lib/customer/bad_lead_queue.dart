@@ -27,6 +27,9 @@ class PendingBadLeadJob {
   final String? recordingPath;
   /// Наш ID коммуникации (order_id в 4sell) → ORIGIN_ID лида.
   final String? communicationId;
+  /// Необязательные данные клиента (бывший покупатель, который просто зашёл).
+  final String? clientName;
+  final String? clientPhone;
   final DateTime createdAt;
 
   PendingBadLeadJob({
@@ -42,6 +45,8 @@ class PendingBadLeadJob {
     required this.managerName,
     required this.recordingPath,
     this.communicationId,
+    this.clientName,
+    this.clientPhone,
     required this.createdAt,
   });
 
@@ -58,6 +63,8 @@ class PendingBadLeadJob {
         'managerName': managerName,
         'recordingPath': recordingPath,
         'communicationId': communicationId,
+        'clientName': clientName,
+        'clientPhone': clientPhone,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -74,6 +81,8 @@ class PendingBadLeadJob {
         managerName: json['managerName'] as String?,
         recordingPath: json['recordingPath'] as String?,
         communicationId: json['communicationId'] as String?,
+        clientName: json['clientName'] as String?,
+        clientPhone: json['clientPhone'] as String?,
         createdAt: DateTime.parse(json['createdAt'] as String),
       );
 }
@@ -148,6 +157,19 @@ class BadLeadQueue {
         managerId = await _bitrixService.findUserIdByName(job.managerName!);
       }
 
+      // Телефон указан — ищем контакт (бывший покупатель). Привязываем,
+      // только если совпадение одно; ошибка поиска лид не блокирует.
+      String? contactId;
+      final phone = job.clientPhone;
+      if (phone != null && phone.isNotEmpty) {
+        try {
+          final matches = await _bitrixService.searchContactsByPhone(phone);
+          if (matches.length == 1) contactId = matches.first.contactId;
+        } on BitrixApiException catch (e) {
+          debugPrint('BadLeadQueue: поиск контакта по телефону не удался ($e)');
+        }
+      }
+
       final leadId = await _bitrixService.createBadLead(
         title: job.title,
         comment: job.comment,
@@ -159,6 +181,9 @@ class BadLeadQueue {
         failReasons: job.failReasons,
         managerId: managerId,
         communicationId: job.communicationId,
+        clientName: job.clientName,
+        clientPhone: job.clientPhone,
+        contactId: contactId,
       );
 
       if (job.recordingPath != null) {

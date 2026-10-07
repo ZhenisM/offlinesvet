@@ -451,15 +451,34 @@ class BitrixService {
     List<String> failReasons = const [],
     int? managerId,
     String? communicationId,
+    String? clientName,
+    String? clientPhone,
+    String? contactId,
   }) async {
     await _requireInternet();
+
+    final hasName = clientName != null && clientName.isNotEmpty;
+    final hasPhone = clientPhone != null && clientPhone.isNotEmpty;
 
     try {
       final response = await dio.post(
         '$_bitrixWebhookUrl/crm.lead.add.json',
         data: {
           'fields': {
-            'TITLE': (title != null && title.isNotEmpty) ? title : 'Некачественный лид (приложение)',
+            'TITLE': (title != null && title.isNotEmpty)
+                ? title
+                : hasName
+                    ? 'Некачественный лид (приложение): $clientName'
+                    : 'Некачественный лид (приложение)',
+            // Имя и телефон — необязательные: если зашёл бывший покупатель
+            // и ничего не купил, менеджер всё равно может записать его.
+            if (hasName) 'NAME': clientName,
+            if (hasPhone)
+              'PHONE': [
+                {'VALUE': clientPhone, 'VALUE_TYPE': 'WORK'},
+              ],
+            // Нашёлся ровно один контакт с этим телефоном — привязываем лид к нему.
+            if (contactId != null) 'CONTACT_ID': contactId,
             'SOURCE_ID': appSourceId,
             'STATUS_ID': badLeadStatusId,
             'COMMENTS': comment,
