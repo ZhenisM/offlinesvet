@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -6,6 +8,27 @@ import 'package:offlinesvet/cart/models/cart_model.dart';
 /// Локальное зеркало корзин в sqflite.
 /// При наличии сети загружает с сервера и сохраняет сюда.
 /// При offline читает отсюда.
+/// Количество товаров (сумма количеств) в ТЕКУЩЕЙ корзине — для красного значка на иконке
+/// корзины в нижнем меню. Обновляется при любом изменении корзин в
+/// локальной базе (добавление товара, смена текущей корзины, синхронизация).
+class CartBadge {
+  CartBadge._();
+  static final ValueNotifier<int> count = ValueNotifier<int>(0);
+
+  static Future<void> refresh() async {
+    try {
+      final carts = await CartLocalStore.loadAll();
+      final current = carts.where((c) => c.isCurrent).toList();
+      // Как «N товаров» в корзине: сумма количеств, а не число позиций.
+      count.value = current.isEmpty
+          ? 0
+          : current.first.items.fold<double>(0, (sum, i) => sum + i.quantity).round();
+    } catch (e) {
+      debugPrint('CartBadge.refresh: $e');
+    }
+  }
+}
+
 class CartLocalStore {
   static const _dbName = 'carts_local.db';
   static const _table  = 'carts';
@@ -40,6 +63,7 @@ class CartLocalStore {
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
+    unawaited(CartBadge.refresh());
   }
 
   /// Загрузить все корзины из локальной БД
@@ -55,6 +79,7 @@ class CartLocalStore {
     final db = await _open();
     await db.update(_table, {'products_info': productsInfo},
         where: 'id = ?', whereArgs: [basketId]);
+    unawaited(CartBadge.refresh());
   }
 
   /// Переключить текущую корзину локально
@@ -65,6 +90,7 @@ class CartLocalStore {
       await txn.update(_table, {'is_current': 1},
           where: 'id = ?', whereArgs: [basketId]);
     });
+    unawaited(CartBadge.refresh());
   }
 
   /// Добавить новую корзину
@@ -72,12 +98,14 @@ class CartLocalStore {
     final db = await _open();
     await db.insert(_table, _toMap(cart),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    unawaited(CartBadge.refresh());
   }
 
   /// Удалить корзину
   static Future<void> deleteCart(String basketId) async {
     final db = await _open();
     await db.delete(_table, where: 'id = ?', whereArgs: [basketId]);
+    unawaited(CartBadge.refresh());
   }
 
   /// Заменить временный ID на реальный после синхронизации
@@ -92,6 +120,7 @@ class CartLocalStore {
       await txn.insert(_table, data,
           conflictAlgorithm: ConflictAlgorithm.replace);
     });
+    unawaited(CartBadge.refresh());
   }
 
   static Map<String, dynamic> _toMap(Cart cart) => {

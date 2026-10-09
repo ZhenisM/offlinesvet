@@ -271,7 +271,9 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
               child: Center(child: SizedBox(width: 20, height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2))),
             )
-          else if (_stores != null && (_stores!.stores.isNotEmpty || _stores!.moscowNote != null)) ...[
+          else ...[
+            // Заголовок показываем всегда; если остатков нет — так и пишем,
+            // чтобы менеджер не думал, что блок просто не загрузился.
             Text(
               'Наличие на складах',
               style: Theme.of(context)
@@ -280,7 +282,19 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                   ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            ..._stores!.stores.map(
+            if (_stores == null)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text('Не удалось загрузить остатки — проверьте интернет',
+                    style: TextStyle(color: Colors.grey, fontSize: 14)),
+              )
+            else if (_stores!.stores.isEmpty && _stores!.moscowNote == null)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 6),
+                child: Text('Нет в наличии на складах',
+                    style: TextStyle(color: Colors.grey, fontSize: 14)),
+              ),
+            ...?_stores?.stores.map(
               (s) => Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
@@ -294,7 +308,7 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                 ),
               ),
             ),
-            if (_stores!.moscowNote != null)
+            if (_stores?.moscowNote != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(_stores!.moscowNote!,

@@ -304,9 +304,10 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
                   children: [
                     _SectionLabel(label: 'Помещение'),
                     const SizedBox(height: 8),
-                    _Dropdown(
+                    _SearchablePicker(
                       value: _selectedRoom,
                       items: _kRooms,
+                      title: 'Помещение',
                       onChanged: (v) => setState(() => _selectedRoom = v),
                     ),
                     const SizedBox(height: 16),
@@ -463,6 +464,123 @@ class _Dropdown extends StatelessWidget {
             if (v != null) onChanged(v);
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Поле выбора с поиском: по нажатию открывается список с полем ввода
+/// сверху, который сразу фильтрует варианты (для длинного списка помещений).
+class _SearchablePicker extends StatelessWidget {
+  const _SearchablePicker({
+    required this.value,
+    required this.items,
+    required this.title,
+    required this.onChanged,
+  });
+
+  final String value;
+  final List<String> items;
+  final String title;
+  final ValueChanged<String> onChanged;
+
+  Future<void> _open(BuildContext context) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _SearchList(items: items, selected: value, title: title),
+    );
+    if (picked != null) onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => _open(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(children: [
+          Expanded(child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 16))),
+          const Icon(Icons.keyboard_arrow_down),
+        ]),
+      ),
+    );
+  }
+}
+
+class _SearchList extends StatefulWidget {
+  const _SearchList({required this.items, required this.selected, required this.title});
+  final List<String> items;
+  final String selected;
+  final String title;
+
+  @override
+  State<_SearchList> createState() => _SearchListState();
+}
+
+class _SearchListState extends State<_SearchList> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _query.trim().toLowerCase();
+    final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final filtered = words.isEmpty
+        ? widget.items
+        : widget.items.where((i) {
+            final t = i.toLowerCase();
+            return words.every(t.contains);
+          }).toList();
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SizedBox(
+        height: MediaQuery.of(context).size.height * 0.75,
+        child: Column(children: [
+          const SizedBox(height: 10),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Поиск: ${widget.title.toLowerCase()}',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: const Color(0xFFF5F5F5),
+                isDense: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+          ),
+          Expanded(
+            child: filtered.isEmpty
+                ? const Center(child: Text('Ничего не найдено', style: TextStyle(color: Colors.grey)))
+                : ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) {
+                      final item = filtered[i];
+                      final sel = item == widget.selected;
+                      return ListTile(
+                        title: Text(item, style: TextStyle(fontWeight: sel ? FontWeight.w600 : FontWeight.normal)),
+                        trailing: sel ? const Icon(Icons.check, color: Color(0xFF4CAF50)) : null,
+                        onTap: () => Navigator.pop(context, item),
+                      );
+                    },
+                  ),
+          ),
+        ]),
       ),
     );
   }

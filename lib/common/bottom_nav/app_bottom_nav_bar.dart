@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/cart/cart_local_store.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:offlinesvet/sync/sync_status_notifier.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
@@ -151,7 +152,7 @@ class AppBottomNavBar extends StatelessWidget {
                     ),
                     if (count > 0)
                       Positioned(
-                        top: 6, right: 6,
+                        top: 6, left: 6,
                         child: Container(
                           width: 10, height: 10,
                           decoration: const BoxDecoration(
@@ -160,6 +161,32 @@ class AppBottomNavBar extends StatelessWidget {
                           ),
                         ),
                       ),
+                    // Число позиций в текущей корзине — красный кружок
+                    // справа сверху у иконки (оранжевая точка слева — это
+                    // несинхронизированные изменения).
+                    ValueListenableBuilder<int>(
+                      valueListenable: CartBadge.count,
+                      builder: (context, items, child) => items <= 0
+                          ? const SizedBox.shrink()
+                          : Positioned(
+                              top: 2, right: 2,
+                              child: Container(
+                                constraints: const BoxConstraints(minWidth: 18),
+                                height: 18,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE53935),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Text(
+                                  items > 99 ? '99+' : '$items',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11,
+                                      fontWeight: FontWeight.w700, height: 1.1),
+                                ),
+                              ),
+                            ),
+                    ),
                   ],
                 ),
               ),

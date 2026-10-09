@@ -6,6 +6,7 @@ import 'package:offlinesvet/sync/sync_service.dart';
 import 'package:offlinesvet/catalog/compare/compare_store.dart';
 import 'package:offlinesvet/customer/bad_lead_queue.dart';
 import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
+import 'package:offlinesvet/cart/cart_local_store.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,9 @@ void main() async {
 
   // Записи разговоров, не доехавшие до 4sell в прошлый запуск.
   FourSellUploadQueue.instance.restore();
+
+  // Значок количества товаров у корзины в нижнем меню.
+  CartBadge.refresh();
 
   runApp(MaterialApp(
     theme: darkTheme,
