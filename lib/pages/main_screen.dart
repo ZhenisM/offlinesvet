@@ -7,6 +7,7 @@ import 'package:offlinesvet/customer/view/bad_lead_dialog.dart';
 import 'package:offlinesvet/customer/view/search_customer_screen.dart';
 import 'package:offlinesvet/repositories/products/catalog_sync_service.dart';
 import 'package:offlinesvet/common/call_recorder_button.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -204,11 +205,17 @@ class _MainScreenState extends State<MainScreen> {
             ),
             const SizedBox(height: 12),
 
-            // Запись разговора — не привязана к конкретному лиду в момент
-            // начала: можно начать запись, затем заполнить и сохранить
-            // анкету (создастся лид), и только когда запись остановится —
-            // она прикрепится к этому лиду в Bitrix (см. CallRecorderButton).
-            const CallRecorderButton(),
+            // Запись разговора теперь стартует сама при нажатии «Анкета
+            // лида» / «Некачественный лид», поэтому кнопку «Записать
+            // разговор» не показываем. Индикатор остаётся только пока
+            // запись ИДЁТ: например, после выбора существующего клиента
+            // запись продолжается — без индикатора менеджер бы не знал
+            // об этом и не смог её остановить.
+            ValueListenableBuilder<bool>(
+              valueListenable: CallRecordingService.instance.isRecording,
+              builder: (context, recording, _) =>
+                  recording ? const CallRecorderButton() : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),

@@ -27,12 +27,12 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen> {
   static const _baseUrl = 'https://prons.kz/ajax/offlinesvet';
   final _dio = Dio();
 
-  bool _generating = false;
   String? _error;
 
-  /// Остальные КП как на сайте («Заказ сформирован»): Каз КП, Без итого,
-  /// Для кассира, Астана КП, Клиент без скидки, Для дизайнеров и
-  /// персональные. Ссылки (с hash-кодом заказа) выдаёт kp_links.php.
+  /// Все КП как на сайте («Заказ сформирован»): NEW КП для клиента, Каз КП,
+  /// Без итого, Для кассира, Астана КП, Клиент без скидки, Для дизайнеров и
+  /// персональные. Список и ссылки (с hash-кодом заказа) выдаёт kp_links.php —
+  /// добавить/убрать КП можно на сервере, без пересборки приложения.
   List<_KpDoc>? _docs;
   String? _docsError;
   String? _loadingDoc;
@@ -68,7 +68,7 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen> {
   }
 
   /// Скачать PDF по ссылке и открыть системное меню «Поделиться» —
-  /// так же, как «КП-Клиент».
+  /// чтобы отправить клиенту.
   Future<void> _openDoc(_KpDoc doc) async {
     if (_loadingDoc != null) return;
     setState(() { _loadingDoc = doc.code; _error = null; });
@@ -111,53 +111,6 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen> {
       setState(() {
         _loadingDoc = null;
         _error = 'Не удалось создать «${doc.title}»: $e';
-      });
-    }
-  }
-
-  Future<void> _generateKpClient() async {
-    setState(() { _generating = true; _error = null; });
-
-    try {
-      final response = await _dio.get(
-        '$_baseUrl/generate_kp_client.php',
-        queryParameters: {'order_id': widget.orderId},
-        options: Options(responseType: ResponseType.bytes),
-      );
-
-      final bytes = response.data as List<int>;
-
-      // Сохраняем во временную папку
-      final dir = await getTemporaryDirectory();
-      final safeClientName = widget.clientName.replaceAll(RegExp(r'[^\wа-яА-Я]'), '_');
-      final fileName = 'KP_${safeClientName}_${widget.orderId}.pdf';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes);
-
-      if (!mounted) return;
-      setState(() => _generating = false);
-
-      // На iPad системное меню "Поделиться" открывается как поповер, и iOS
-      // требует явно указать точку/область экрана, от которой он должен
-      // "вырасти" (sharePositionOrigin). На iPhone и Android этот параметр
-      // необязателен и без него всё работает — именно поэтому баг был виден
-      // только на iPad. Берём прямоугольник текущего экрана как origin.
-      final box = context.findRenderObject() as RenderBox?;
-      final origin = box != null ? (box.localToGlobal(Offset.zero) & box.size) : null;
-
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: 'КП для клиента ${widget.clientName}, заказ №${widget.orderId}',
-        sharePositionOrigin: origin,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _generating = false;
-        // Раньше здесь был общий текст "Проверьте интернет" вне зависимости
-        // от реальной причины — из-за этого iPad-специфичная ошибка не была
-        // видна вообще. Показываем реальный текст исключения.
-        _error = 'Не удалось создать КП: $e';
       });
     }
   }
@@ -218,15 +171,6 @@ class _OrderSuccessScreenState extends State<OrderSuccessScreen> {
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                   color: Colors.black54)),
             const SizedBox(height: 10),
-
-            // Кнопка КП-Клиент
-            _DocumentButton(
-              label: 'NEW КП для клиента',
-              subtitle: 'Коммерческое предложение для клиента',
-              icon: Icons.picture_as_pdf_outlined,
-              loading: _generating,
-              onTap: _generateKpClient,
-            ),
 
             ...?_docs?.map((d) => Padding(
                   padding: const EdgeInsets.only(top: 10),
