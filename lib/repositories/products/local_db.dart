@@ -17,7 +17,7 @@ class LocalDb {
 
     _db = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE sections (
@@ -41,6 +41,8 @@ class LocalDb {
             prices_json TEXT NOT NULL,
             props_json TEXT NOT NULL,
             search_text TEXT,
+            stock INTEGER,
+            stock_moscow INTEGER,
             saved_at INTEGER NOT NULL
           )
         ''');
@@ -86,6 +88,11 @@ class LocalDb {
           // (getSections()) — это не критично, разделы и так продолжат
           // отображаться, просто временно без картинки слева.
           await db.execute('ALTER TABLE sections ADD COLUMN image TEXT');
+        }
+        if (oldVersion < 4) {
+          // Остатки для карточки каталога и офлайн-сортировки «по умолчанию».
+          await db.execute('ALTER TABLE products ADD COLUMN stock INTEGER');
+          await db.execute('ALTER TABLE products ADD COLUMN stock_moscow INTEGER');
         }
       },
     );
@@ -207,6 +214,8 @@ class LocalDb {
             'VALUE': prop.value,
           }))),
           'search_text': searchText,
+          'stock': p.stock,
+          'stock_moscow': p.stockMoscow,
           'saved_at': now,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
@@ -368,6 +377,8 @@ class LocalDb {
       image: row['image'] as String?,
       prices: pricesList,
       props: propsMap,
+      stock: row['stock'] as int?,
+      stockMoscow: row['stock_moscow'] as int?,
     );
   }
 }

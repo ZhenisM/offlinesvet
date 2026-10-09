@@ -50,6 +50,10 @@ class Product {
   final String? image;
   final List<Price> prices;
   final Map<String, Prop> props;
+  /// Остатки для карточки каталога: сумма по складам, кроме Москвы, и
+  /// отдельно Москва. null — сервер не прислал (старый кэш, поиск по ID).
+  final int? stock;
+  final int? stockMoscow;
 
   Product({
     required this.id,
@@ -60,6 +64,8 @@ class Product {
     required this.image,
     required this.prices,
     required this.props,
+    this.stock,
+    this.stockMoscow,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -85,6 +91,8 @@ class Product {
       image: json['image']?.toString(),
       prices: pricesList,
       props: propsMap,
+      stock: (json['stock'] as num?)?.toInt(),
+      stockMoscow: (json['stock_moscow'] as num?)?.toInt(),
     );
   }
 }

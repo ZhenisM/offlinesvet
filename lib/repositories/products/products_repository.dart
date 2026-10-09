@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/repositories/products/local_db.dart';
+import 'package:offlinesvet/catalog/sort/catalog_sort.dart';
 import 'package:offlinesvet/catalog/filter/filter_screen.dart';
 
 const String _baseUrl = 'https://prons.kz/ajax/offlinesvet';
@@ -240,18 +241,23 @@ class ProductsRepository {
     int page = 1,
     int limit = 50,
     Section? section, // передаём для офлайн-режима
+    CatalogSort sort = CatalogSort.byDefault,
+    bool desc = true,
   }) async {
+    // Офлайн: сортировка возможна только по всему разделу сразу, поэтому
+    // на первой странице берём из кэша все товары раздела и сортируем их,
+    // дальше страниц нет.
+    Future<({List<Product> products, bool hasMore})> offline() async {
+      if (page > 1) return (products: <Product>[], hasMore: false);
+      final cached = await _loadCachedProductsForSection(sectionId, section);
+      return (products: sortProductsOffline(cached, sort, desc: desc), hasMore: false);
+    }
+
     final online = await _hasInternet();
 
     if (!online) {
-      debugPrint('getProducts: offline, читаем из кэша sectionId=$sectionId page=$page');
-      final cached = await _loadCachedProductsForSection(
-        sectionId, section,
-        limit: limit, offset: (page - 1) * limit,
-      );
-      // Как и на сервере: если пришла полная страница — считаем, что
-      // дальше может быть ещё (без лишнего COUNT(*) по всем подсекциям).
-      return (products: cached, hasMore: cached.length == limit);
+      debugPrint('getProducts: offline, читаем из кэша sectionId=$sectionId');
+      return offline();
     }
 
     try {
@@ -261,6 +267,8 @@ class ProductsRepository {
           'section_id': sectionId,
           'page': page,
           'limit': limit,
+          'sort': sort.code,
+          'order': desc ? 'desc' : 'asc',
         },
       );
 
@@ -272,7 +280,7 @@ class ProductsRepository {
           .map((e) => Product.fromJson(e as Map<String, dynamic>))
           .toList();
 
-      debugPrint('getProducts sectionId=$sectionId page=$page: ${products.length} товаров');
+      debugPrint('getProducts sectionId=$sectionId page=$page sort=${sort.code}: ${products.length} товаров');
 
       if (products.isNotEmpty) {
         LocalDb.saveProducts(products).then((_) {
@@ -286,11 +294,7 @@ class ProductsRepository {
       );
     } catch (e) {
       debugPrint('getProducts: ошибка сети, читаем из кэша: $e');
-      final cached = await _loadCachedProductsForSection(
-        sectionId, section,
-        limit: limit, offset: (page - 1) * limit,
-      );
-      return (products: cached, hasMore: cached.length == limit);
+      return offline();
     }
   }
 

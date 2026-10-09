@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/catalog/sort/catalog_sort.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -91,6 +92,65 @@ class _CategoryScreenState extends State<CategoryScreen> {
     );
   }
 
+  // Сортировка: «по умолчанию» (Maytoni/Freya с остатками → остальные с
+  // остатками → только Москва → без остатков) или выбранная в шторке.
+  // _desc = стрелка вверх: от большего к меньшему.
+  CatalogSort _sort = CatalogSort.byDefault;
+  bool _desc = true;
+
+  /// Перезагрузить список с начала (после смены сортировки).
+  void _reloadSorted() {
+    setState(() {
+      _products.clear();
+      _hasMore = true;
+      _page = 1;
+      _error = null;
+    });
+    if (_activeFilters.isEmpty) {
+      _loadProducts();
+    } else {
+      _applyFilters();
+    }
+  }
+
+  Future<void> _openSortSheet() async {
+    final picked = await showModalBottomSheet<CatalogSort>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+              child: Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            ),
+            const SizedBox(height: 14),
+            const Text('Сортировка', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            ...CatalogSort.values.map((o) => ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  title: Text(o.optionLabel),
+                  trailing: o == _sort ? const Icon(Icons.check, color: Color(0xFF4CAF50)) : null,
+                  onTap: () => Navigator.pop(ctx, o),
+                )),
+          ]),
+        ),
+      ),
+    );
+    if (picked == null || picked == _sort) return;
+    setState(() {
+      _sort = picked;
+      _desc = true; // новая сортировка — стрелка вверх (от большего к меньшему)
+    });
+    _reloadSorted();
+  }
+
+  void _toggleSortDirection() {
+    setState(() => _desc = !_desc);
+    _reloadSorted();
+  }
+
   Future<void> _loadProducts() async {
     if (_loading || !_hasMore) return;
 
@@ -105,6 +165,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
         page: _page,
         limit: _limit,
         section: widget.section, // передаём для офлайн-режима
+        sort: _sort,
+        desc: _desc,
       );
 
       if (!mounted) return;
@@ -206,6 +268,48 @@ class _CategoryScreenState extends State<CategoryScreen> {
                         ]),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    // Кнопка сортировки: название = выбранная сортировка.
+                    Flexible(
+                      child: GestureDetector(
+                        onTap: _openSortSheet,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _sort == CatalogSort.byDefault ? const Color(0xFFF3F2F7) : const Color(0xFF4CAF50),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.sort, size: 16,
+                                color: _sort == CatalogSort.byDefault ? Colors.black87 : Colors.white),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _sort.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: _sort == CatalogSort.byDefault ? Colors.black87 : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                      ),
+                    ),
+                    // Стрелка направления — только у выбранной сортировки.
+                    // Вверх — от большего к меньшему, вниз — наоборот.
+                    if (_sort.hasDirection)
+                      GestureDetector(
+                        onTap: _toggleSortDirection,
+                        child: Container(
+                          margin: const EdgeInsets.only(left: 6),
+                          padding: const EdgeInsets.all(7),
+                          decoration: const BoxDecoration(color: Color(0xFFF3F2F7), shape: BoxShape.circle),
+                          child: Icon(_desc ? Icons.arrow_upward : Icons.arrow_downward, size: 18, color: Colors.black87),
+                        ),
+                      ),
                     const Spacer(),
                     // Избранное
                     GestureDetector(
@@ -429,6 +533,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
         'page': _page,
         'limit': _limit,
         'filters': _activeFilters.toRequestPayload(),
+        'sort': _sort.code,
+        'order': _desc ? 'desc' : 'asc',
       };
       debugPrint('FILTER PAYLOAD: ' + jsonEncode(payload));
       final response = await _filterDio.post(
@@ -462,7 +568,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
         return;
       }
       try {
-        final list = await _repository.applyFiltersOffline(widget.section, _activeFilters);
+        final list = sortProductsOffline(
+            await _repository.applyFiltersOffline(widget.section, _activeFilters), _sort, desc: _desc);
         if (!mounted) return;
         setState(() {
           _products

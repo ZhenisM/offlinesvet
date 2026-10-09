@@ -149,12 +149,12 @@ class _ProductTileState extends State<ProductTile> {
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                   const SizedBox(height: 4),
-                  Text(
-                    _unescape.convert(widget.product.name),
-                    style: const TextStyle(fontSize: 12, color: Colors.black87),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  // Вместо названия — артикул и остатки (как просили
+                  // менеджеры): название есть на детальной карточке.
+                  _InfoRow(label: 'Артикул', value: (widget.product.article ?? '').isEmpty
+                      ? '—' : _unescape.convert(widget.product.article!)),
+                  _InfoRow(label: 'Остатки', value: _stockText(widget.product.stock)),
+                  _InfoRow(label: 'Москва', value: _stockText(widget.product.stockMoscow)),
                 ],
               ),
             ),
@@ -242,6 +242,35 @@ class _IconBtn extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+String _stockText(int? v) => v == null ? '—' : v.toString();
+
+/// Строка «подпись слева — значение справа» в карточке каталога.
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 1),
+      child: Row(children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ]),
     );
   }
 }
