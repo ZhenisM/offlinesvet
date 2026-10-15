@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:offlinesvet/common/audio_converter.dart';
 import 'package:flutter/gestures.dart';
 import 'package:dio/dio.dart';
 import 'package:record/record.dart';
@@ -240,10 +241,21 @@ class CallRecordingService {
   /// вызывающему коду, файл НЕ удаляется (чтобы можно было повторить
   /// позже, а не потерять запись молча).
   Future<void> attachRecordingFileToLead(String filePath, String leadId) async {
-    final file = File(filePath);
+    var file = File(filePath);
     if (!await file.exists()) return;
 
-    // WAV тяжёлый: файл + base64 + JSON держатся в памяти одновременно
+    // Для Битрикс24 — сжатая копия M4A (≈0,5 МБ/мин вместо 5,8 МБ/мин у
+    // WAV). Оригинальный WAV уже скопирован очередью 4sell, его удаляем.
+    if (filePath.toLowerCase().endsWith('.wav')) {
+      final m4a = await AudioConverter.wavToM4a(filePath);
+      if (m4a != null && await File(m4a).exists() && await File(m4a).length() > 0) {
+        try { await file.delete(); } catch (_) {}
+        filePath = m4a;
+        file = File(m4a);
+      }
+    }
+
+    // Если сжать не удалось — WAV тяжёлый: файл + base64 + JSON держатся в памяти одновременно
     // (≈3,5× размера файла), на слабых Android это риск падения. Длинные
     // разговоры в Bitrix не вкладываем — оригинал уходит в 4sell, а их
     // транскрипция/резюме приходят в поля лида.
