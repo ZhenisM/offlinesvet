@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
@@ -24,8 +28,45 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
   bool _storesLoading = false;
   bool _storesRequested = false; // чтобы не грузить повторно при каждом didChangeDependencies
   List<String> _images = [];
-  final _imagePageController = PageController();
+  // Листание по кругу: «бесконечный» PageView, старт с середины.
+  static const _loopBase = 10000;
+  final _imagePageController = PageController(initialPage: _loopBase);
   int _currentImageIndex = 0;
+
+  List<String> _collectionIds = [];
+  List<String> _popularIds = [];
+  List<String> _viewedIds = [];
+  String? _relatedFor;
+
+  static const _viewedKey = 'viewed_product_ids';
+
+  /// «Просматривали» — история на телефоне (последние 20 товаров).
+  Future<void> _trackViewed(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_viewedKey) ?? [];
+    final others = list.where((e) => e != id).toList();
+    if (mounted) setState(() => _viewedIds = others.take(12).toList());
+    await prefs.setStringList(_viewedKey, [id, ...others].take(20).toList());
+  }
+
+  Future<void> _loadRelated(String id) async {
+    if (_relatedFor == id) return;
+    _relatedFor = id;
+    _trackViewed(id);
+    try {
+      final r = await Dio().get('https://prons.kz/ajax/offlinesvet/product_related.php',
+          queryParameters: {'product_id': id},
+          options: Options(responseType: ResponseType.plain, receiveTimeout: const Duration(seconds: 20)));
+      final d = jsonDecode(r.data as String) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        _collectionIds = ((d['collection'] as List?) ?? []).map((e) => '$e').toList();
+        _popularIds = ((d['popular'] as List?) ?? []).map((e) => '$e').toList();
+      });
+    } catch (e) {
+      debugPrint('product_related: $e');
+    }
+  }
 
   @override
   void initState() {
@@ -93,6 +134,7 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
         _storesRequested = true;
         _loadStores(args.id);
         _loadImages(args.id);
+        _loadRelated(args.id);
       }
     }
   }
@@ -186,9 +228,12 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
               height: 260,
               child: PageView.builder(
                 controller: _imagePageController,
-                itemCount: _images.length,
-                onPageChanged: (i) => setState(() => _currentImageIndex = i),
-                itemBuilder: (context, i) => ClipRRect(
+                itemCount: null, // бесконечно — по кругу
+                physics: _images.length > 1 ? null : const NeverScrollableScrollPhysics(),
+                onPageChanged: (p) => setState(() => _currentImageIndex = (p - _loopBase) % _images.length),
+                itemBuilder: (context, page) {
+                  final i = (page - _loopBase) % _images.length;
+                  return ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
                     imageUrl: _images[i],
@@ -202,7 +247,8 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                       color: Colors.grey,
                     ),
                   ),
-                ),
+                );
+                },
               ),
             ),
             if (_images.length > 1) ...[
@@ -229,8 +275,36 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
           const SizedBox(height: 20),
 
           // Основная информация
-          _InfoRow(label: 'Артикул', value: product!.article ?? '—'),
-          if (product!.brend != null) _InfoRow(label: 'Бренд', value: product!.brend!),
+          _InfoRow(
+            label: 'Артикул',
+            value: product!.article ?? '—',
+            // Копирование артикула — как иконка на сайте
+            trailing: (product!.article ?? '').isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.copy_rounded, size: 18, color: Colors.black54),
+                    tooltip: 'Скопировать артикул',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      await Clipboard.setData(ClipboardData(text: product!.article!));
+                      messenger.showSnackBar(SnackBar(
+                        content: Text('Артикул ${product!.article} скопирован'),
+                        duration: const Duration(seconds: 2),
+                      ));
+                    },
+                  ),
+          ),
+          // Бренд(страна) — как на сайте
+          if (product!.brend != null)
+            _InfoRow(
+              label: 'Бренд',
+              value: (product!.props['STRANA']?.value ?? '').trim().isEmpty
+                  ? product!.brend!
+                  : '${product!.brend!}(${product!.props['STRANA']!.value.trim()})',
+            ),
           if (_categoryName() != null) _InfoRow(label: 'Категория', value: _categoryName()!),
 
           const SizedBox(height: 20),
@@ -320,6 +394,20 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
           // Свойства товара — развёртывающийся блок
           if (_detailProps(product!.props).isNotEmpty)
             _PropsExpansionTile(props: _detailProps(product!.props)),
+          // Блоки как на сайте: «Другие товары коллекции», «Популярные в
+          // разделе», «Просматривали» — раскрываются, карточки грузятся при раскрытии.
+          if (_collectionIds.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _RelatedBlock(title: 'Другие товары коллекции', ids: _collectionIds, repository: _productsRepository),
+          ],
+          if (_popularIds.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _RelatedBlock(title: 'Популярные в разделе', ids: _popularIds, repository: _productsRepository),
+          ],
+          if (_viewedIds.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _RelatedBlock(title: 'Просматривали', ids: _viewedIds, repository: _productsRepository),
+          ],
 
           const SizedBox(height: 80),
         ],
@@ -380,10 +468,11 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
 
 // Строка с меткой и значением
 class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
+  const _InfoRow({required this.label, required this.value, this.trailing});
 
   final String label;
   final String value;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -405,6 +494,7 @@ class _InfoRow extends StatelessWidget {
               style: const TextStyle(fontSize: 14),
             ),
           ),
+          if (trailing != null) ...[const SizedBox(width: 6), SizedBox(width: 28, height: 22, child: trailing!)],
         ],
       ),
     );
@@ -461,6 +551,81 @@ class _PropsExpansionTile extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+/// Раскрывающийся блок с карточками товаров (как блоки под карточкой на
+/// сайте). Товары грузятся при первом раскрытии.
+class _RelatedBlock extends StatefulWidget {
+  const _RelatedBlock({required this.title, required this.ids, required this.repository});
+  final String title;
+  final List<String> ids;
+  final ProductsRepository repository;
+
+  @override
+  State<_RelatedBlock> createState() => _RelatedBlockState();
+}
+
+class _RelatedBlockState extends State<_RelatedBlock> {
+  List<Product>? _products;
+  bool _loading = false;
+
+  Future<void> _load() async {
+    if (_products != null || _loading) return;
+    setState(() => _loading = true);
+    try {
+      final list = await widget.repository.getProductsByIds(widget.ids);
+      // порядок — как прислал сервер
+      final byId = {for (final p in list) p.id: p};
+      final ordered = widget.ids.map((id) => byId[id]).whereType<Product>().toList();
+      if (mounted) setState(() => _products = ordered);
+    } catch (_) {
+      if (mounted) setState(() => _products = []);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: ExpansionTile(
+        title: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text('${widget.ids.length} товаров', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        shape: const Border(),
+        onExpansionChanged: (open) { if (open) _load(); },
+        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        children: [
+          if (_loading)
+            const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2))
+          else if (_products != null && _products!.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('Не удалось загрузить товары', style: TextStyle(color: Colors.grey)),
+            )
+          else if (_products != null)
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _products!.length,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 0.62,
+              ),
+              itemBuilder: (context, i) => ProductTile(product: _products![i]),
+            ),
         ],
       ),
     );
