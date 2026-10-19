@@ -3,6 +3,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:offlinesvet/catalog/category/view/category_screen.dart';
 import 'package:offlinesvet/catalog/widgets/category_thumbnail.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
+import 'package:offlinesvet/learning/web_pages.dart';
+import 'package:offlinesvet/learning/reports_screens.dart';
 
 class MenuScreen extends StatelessWidget {
   final List<Section> sections;
@@ -17,6 +19,11 @@ class MenuScreen extends StatelessWidget {
   void _goTo(BuildContext context, String route) {
     Navigator.pop(context);
     Navigator.pushNamed(context, route);
+  }
+
+  void _push(BuildContext context, Widget screen) {
+    Navigator.pop(context);
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
 
   void _openCatalogSheet(BuildContext context) {
@@ -135,6 +142,18 @@ class MenuScreen extends StatelessWidget {
             label: 'Сравнение',
             onTap: () => _goTo(context, '/compare'),
           ),
+
+          // Разделы меню в шапке сайта offline.svet.kz
+          _divider(),
+          _MenuItem(icon: Icons.school_outlined, label: 'Обучение', onTap: () => _push(context, const LearningScreen())),
+          _divider(),
+          _MenuItem(icon: Icons.menu_book_outlined, label: 'Уроки', onTap: () => _push(context, const LessonsScreen())),
+          _divider(),
+          _MenuItem(icon: Icons.leaderboard_outlined, label: 'Статистика', onTap: () => _push(context, const ManagerReportsScreen())),
+          _divider(),
+          _MenuItem(icon: Icons.bar_chart_rounded, label: 'Графики', onTap: () => _push(context, const ChartsScreen())),
+          _divider(),
+          _MenuItem(icon: Icons.insights, label: 'Отчёты', onTap: () => _push(context, const BiReportsScreen())),
 
           const SizedBox(height: 16),
         ],

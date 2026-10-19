@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/learning/web_pages.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -203,7 +204,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.lightbulb_outline,
                 label: 'Советы',
                 onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const _TipsScreen())),
+                  MaterialPageRoute(builder: (_) => const AdviceScreen())),
               ),
               const Divider(height: 1, indent: 56),
               _MenuItem(
@@ -277,31 +278,3 @@ class _MenuItem extends StatelessWidget {
   }
 }
 
-// Советы — заглушка
-class _TipsScreen extends StatelessWidget {
-  const _TipsScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF3F2F7),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF4CAF50),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Советы', style: TextStyle(fontWeight: FontWeight.w600)),
-      ),
-      body: const Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.lightbulb_outline, size: 60, color: Colors.grey),
-          SizedBox(height: 16),
-          Text('Раздел в разработке',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.black54)),
-          SizedBox(height: 8),
-          Text('Советы появятся в следующем обновлении',
-            style: TextStyle(fontSize: 13, color: Colors.grey)),
-        ]),
-      ),
-    );
-  }
-}
