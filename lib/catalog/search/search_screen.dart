@@ -7,6 +7,7 @@ import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/repositories/products/local_db.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
+import 'package:offlinesvet/catalog/search/photo_search_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.initialQuery = ''});
@@ -137,6 +138,13 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            tooltip: 'Поиск по фото',
+            icon: const Icon(Icons.photo_camera_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PhotoSearchScreen()),
+            ),
+          ),
           if (_ctrl.text.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.close),

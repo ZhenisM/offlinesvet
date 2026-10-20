@@ -1,33 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:offlinesvet/catalog/search/photo_search_screen.dart';
 import 'package:offlinesvet/catalog/search/search_screen.dart';
 
 /// Компактная строка поиска в AppBar каталога.
-/// В свёрнутом виде — маленькая иконка. При нажатии открывает SearchScreen.
+/// Нажатие на «Поиск» открывает SearchScreen, на камеру — поиск по фото.
 class CatalogSearchBar extends StatelessWidget {
   const CatalogSearchBar({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SearchScreen()),
+    return Container(
+      width: 140,
+      height: 36,
+      margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Container(
-        width: 140,
-        height: 36,
-        margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search, color: Colors.white70, size: 18),
-            SizedBox(width: 4),
-            Text('Поиск', style: TextStyle(color: Colors.white70, fontSize: 13)),
-          ],
-        ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.search, color: Colors.white70, size: 18),
+                  SizedBox(width: 4),
+                  Text('Поиск', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ],
+              ),
+            ),
+          ),
+          Container(width: 1, height: 18, color: Colors.white30),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PhotoSearchScreen()),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Icon(Icons.photo_camera_outlined, color: Colors.white70, size: 18),
+            ),
+          ),
+        ],
       ),
     );
   }

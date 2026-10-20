@@ -48,7 +48,9 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Используется для быстрого входа в приложение вместо пароля</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Используется для сканирования штрихкода товара</string>
+	<string>Используется для сканирования штрихкода и поиска товара по фото</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Используется для поиска товара по фото из галереи</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Используется для записи разговора с клиентом</string>
 </dict>
