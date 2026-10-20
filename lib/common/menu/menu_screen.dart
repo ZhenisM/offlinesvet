@@ -98,6 +98,7 @@ class MenuScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    SectionsAccess.load(); // обновить права при каждом открытии меню
     return Scaffold(
       appBar: AppBar(
         title: const Text('Меню'),
@@ -143,17 +144,27 @@ class MenuScreen extends StatelessWidget {
             onTap: () => _goTo(context, '/compare'),
           ),
 
-          // Разделы меню в шапке сайта offline.svet.kz
-          _divider(),
-          _MenuItem(icon: Icons.school_outlined, label: 'Обучение', onTap: () => _push(context, const LearningScreen())),
-          _divider(),
-          _MenuItem(icon: Icons.menu_book_outlined, label: 'Уроки', onTap: () => _push(context, const LessonsScreen())),
-          _divider(),
-          _MenuItem(icon: Icons.leaderboard_outlined, label: 'Статистика', onTap: () => _push(context, const ManagerReportsScreen())),
-          _divider(),
-          _MenuItem(icon: Icons.bar_chart_rounded, label: 'Графики', onTap: () => _push(context, const ChartsScreen())),
-          _divider(),
-          _MenuItem(icon: Icons.insights, label: 'Отчёты', onTap: () => _push(context, const BiReportsScreen())),
+          // Разделы меню в шапке сайта offline.svet.kz — только те, к
+          // которым у менеджера есть доступ (права на папки сайта).
+          ValueListenableBuilder<Map<String, bool>?>(
+            valueListenable: SectionsAccess.value,
+            builder: (context, access, child) {
+              bool can(String k) => access?[k] == true;
+              final items = <Widget>[
+                if (can('learning'))
+                  _MenuItem(icon: Icons.school_outlined, label: 'Обучение', onTap: () => _push(context, const LearningScreen())),
+                if (can('lessons'))
+                  _MenuItem(icon: Icons.menu_book_outlined, label: 'Уроки', onTap: () => _push(context, const LessonsScreen())),
+                if (can('statistics'))
+                  _MenuItem(icon: Icons.leaderboard_outlined, label: 'Статистика', onTap: () => _push(context, const ManagerReportsScreen())),
+                if (can('charts'))
+                  _MenuItem(icon: Icons.bar_chart_rounded, label: 'Графики', onTap: () => _push(context, const ChartsScreen())),
+                if (can('reports'))
+                  _MenuItem(icon: Icons.insights, label: 'Отчёты', onTap: () => _push(context, const BiReportsScreen())),
+              ];
+              return Column(children: [for (final w in items) ...[_divider(), w]]);
+            },
+          ),
 
           const SizedBox(height: 16),
         ],

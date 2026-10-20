@@ -40,6 +40,29 @@ class ReportsApi {
   }
 }
 
+/// Какие разделы доступны менеджеру — по правам на папки сайта
+/// offline.svet.kz (как в админке). Загружается при открытии меню.
+class SectionsAccess {
+  SectionsAccess._();
+  static final ValueNotifier<Map<String, bool>?> value = ValueNotifier(null);
+  static Future<void>? _loading;
+
+  static bool can(String key) => value.value?[key] == true;
+
+  static Future<void> load() {
+    return _loading ??= () async {
+      try {
+        final r = await ReportsApi().call('access');
+        value.value = r.map((k, v) => MapEntry(k, v == true));
+      } catch (_) {
+        // без интернета — оставляем прошлое значение
+      } finally {
+        _loading = null;
+      }
+    }();
+  }
+}
+
 String _money(num v) {
   final s = v.round().toString();
   final b = StringBuffer();
@@ -101,7 +124,7 @@ class _ManagerReportsScreenState extends State<ManagerReportsScreen> {
       body: _managers == null
           ? (_error != null ? _errorView(_error!, _load) : const Center(child: CircularProgressIndicator()))
           : ListView(padding: const EdgeInsets.all(12), children: [
-              SizedBox(
+              if (SectionsAccess.can('top_items')) SizedBox(
                 height: 48,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFF438CCB),
@@ -112,7 +135,7 @@ class _ManagerReportsScreenState extends State<ManagerReportsScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
+              if (SectionsAccess.can('new_stats')) SizedBox(
                 height: 48,
                 child: FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF16522),
