@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:offlinesvet/auth/account_session.dart';
 import 'package:offlinesvet/customer/customer.dart';
 
 class AuthService {
@@ -18,6 +19,10 @@ class AuthService {
     // Важно: чистим клиентов ДО удаления user_id — CustomerStorage
     // использует user_id как namespace и не найдёт данные после.
     await CustomerStorage.clearAll();
+
+    // ФИО менеджера и локальные корзины принадлежат этому аккаунту —
+    // следующий менеджер не должен их видеть.
+    await AccountSession.onLogout();
 
     await prefs.remove("auth_token");
     await prefs.remove("user_id");

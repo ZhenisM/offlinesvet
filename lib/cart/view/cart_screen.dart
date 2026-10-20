@@ -176,7 +176,21 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _switchCart(Cart cart) async {
-    if (cart.isCurrent) return;
+    // Нажали на корзину, которая на сервере уже текущая: переключать нечего,
+    // но в приложении её клиент мог быть не выбран (например, после
+    // повторного входа). Делаем её клиента текущим без лишнего запроса.
+    if (cart.isCurrent) {
+      await CustomerStorage.setActiveCartId(cart.id);
+      await CallRecordingService.instance.onActiveCartChanged(cart.id);
+      if (cart.clientInfo != null) {
+        await CustomerStorage.setActive(Customer.fromMultibasketsClientInfo(
+          cart.clientInfo!,
+          selectedAt: DateTime.now(),
+        ));
+      }
+      if (mounted) setState(() {});
+      return;
+    }
 
     final managerId = await CustomerStorage.currentManagerId();
     if (managerId == null) return;

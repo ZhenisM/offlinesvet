@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart' as dio_lib;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:offlinesvet/auth/account_session.dart';
 
 
 
@@ -74,9 +75,8 @@ class _LoginScreenState extends State<LoginScreen > {
             if (userId != null) {
               await prefs.setString("user_id", userId);
             }
-            if (fullName != null && fullName.isNotEmpty) {
-              await prefs.setString("user_name", fullName);
-            }
+            // ФИО и корзины — от нового менеджера, а не от прошлого входа.
+            await AccountSession.onLogin(userId: userId, fullName: fullName);
 
             // Сохраняем куки сессии для WebView
             // login.php на prons.kz устанавливает PHPSESSID и BITRIX_SM_*

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:offlinesvet/auth/account_session.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -40,6 +41,9 @@ class _SplashScreenState extends State<SplashScreen> {
           if (userId != null) {
             await prefs.setString('user_id', userId);
           }
+          // Свежие корзины с сервера: могли измениться на сайте или
+          // на другом устройстве — значок корзины обновится сам.
+          AccountSession.refreshCarts(userId);
 
           Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
           return;

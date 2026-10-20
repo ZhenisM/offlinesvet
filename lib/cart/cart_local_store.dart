@@ -66,6 +66,14 @@ class CartLocalStore {
     unawaited(CartBadge.refresh());
   }
 
+  /// Очистить локальную копию корзин — при смене менеджера, чтобы не
+  /// показывать корзины и значок прошлого аккаунта.
+  static Future<void> clearAll() async {
+    final db = await _open();
+    await db.delete(_table);
+    await CartBadge.refresh();
+  }
+
   /// Загрузить все корзины из локальной БД
   static Future<List<Cart>> loadAll() async {
     final db = await _open();
