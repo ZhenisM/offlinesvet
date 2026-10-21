@@ -10,10 +10,14 @@ class AuthService {
     String? token = prefs.getString("auth_token");
 
     if (token != null) {
-      await http.post(
-        Uri.parse("https://prons.kz/ajax/logout.php"),
-        body: {"token": token},
-      );
+      // Без сети или при медленном ответе выход всё равно должен пройти:
+      // на планшете менеджеры меняются за секунды.
+      try {
+        await http.post(
+          Uri.parse("https://prons.kz/ajax/logout.php"),
+          body: {"token": token},
+        ).timeout(const Duration(seconds: 5));
+      } catch (_) {}
     }
 
     // Важно: чистим клиентов ДО удаления user_id — CustomerStorage

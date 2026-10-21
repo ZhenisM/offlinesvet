@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart' as dio_lib;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/auth/account_session.dart';
+import 'package:offlinesvet/auth/badge_api.dart';
+import 'package:offlinesvet/auth/badge_scan_screen.dart';
 
 
 
@@ -21,6 +23,11 @@ class _LoginScreenState extends State<LoginScreen > {
   String? _errorMessage;
   bool _obscurePassword = true;
 
+  // Вход по QR-бейджу доступен только на планшетах, которые зарегистрировал
+  // администратор. Кнопка появляется, когда сервер подтвердил регистрацию.
+  bool _badgeAvailable = false;
+  bool _autoScanHandled = false;
+
   bool get _canSubmit =>
       _loginController.text.trim().isNotEmpty && _passwordController.text.isNotEmpty;
 
@@ -31,6 +38,66 @@ class _LoginScreenState extends State<LoginScreen > {
     // пересобираем экран при любом изменении текста в полях.
     _loginController.addListener(() => setState(() {}));
     _passwordController.addListener(() => setState(() {}));
+    _checkDevice();
+  }
+
+  Future<void> _checkDevice() async {
+    try {
+      final d = await BadgeApi().deviceStatus();
+      if (!mounted) return;
+      setState(() => _badgeAvailable = d.registered);
+    } catch (_) {
+      return; // нет сети — остаётся обычный вход
+    }
+    // «Сменить менеджера» в профиле открывает этот экран с {'scan': true}:
+    // сразу показываем сканер, чтобы передача планшета заняла секунды.
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (_badgeAvailable && !_autoScanHandled && args is Map && args['scan'] == true) {
+      _autoScanHandled = true;
+      _scanBadge();
+    }
+  }
+
+  Future<void> _scanBadge() async {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const BadgeScanScreen()),
+    );
+    if (code == null || !mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final r = await BadgeApi().login(code);
+      await _completeLogin(token: r.token, userId: r.userId, fullName: r.fullName, cookies: r.cookies);
+    } on BadgeException catch (e) {
+      if (mounted) setState(() => _errorMessage = e.message);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Общее завершение входа — и по паролю, и по бейджу.
+  Future<void> _completeLogin({
+    required String token,
+    required String? userId,
+    required String? fullName,
+    required List<String> cookies,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("auth_token", token);
+    if (userId != null) {
+      await prefs.setString("user_id", userId);
+    }
+    // ФИО и корзины — от нового менеджера, а не от прошлого входа.
+    await AccountSession.onLogin(userId: userId, fullName: fullName);
+
+    // Куки сессии prons.kz (PHPSESSID, BITRIX_SM_*) — для встроенного браузера.
+    if (cookies.isNotEmpty) {
+      await prefs.setString('session_cookies', cookies.join(', '));
+    }
+
+    if (mounted) Navigator.pushReplacementNamed(context, "/home");
   }
 
   @override
@@ -66,27 +133,14 @@ class _LoginScreenState extends State<LoginScreen > {
           final data = json.decode(body);
 
           if (data["result"] != null) {
-            String token = data["result"]["token"];
-            String? userId = data["result"]["user_id"]?.toString();
-            String? fullName = data["result"]["full_name"]?.toString();
-
-            SharedPreferences prefs = await SharedPreferences.getInstance();
-            await prefs.setString("auth_token", token);
-            if (userId != null) {
-              await prefs.setString("user_id", userId);
-            }
-            // ФИО и корзины — от нового менеджера, а не от прошлого входа.
-            await AccountSession.onLogin(userId: userId, fullName: fullName);
-
-            // Сохраняем куки сессии для WebView
-            // login.php на prons.kz устанавливает PHPSESSID и BITRIX_SM_*
-            // Собираем ВСЕ Set-Cookie через dio
-            final cookieParts = dioResp.headers.map['set-cookie'] ?? [];
-            if (cookieParts.isNotEmpty) {
-              await prefs.setString('session_cookies', cookieParts.join(', '));
-            }
-
-            if (mounted) Navigator.pushReplacementNamed(context, "/home");
+            // login.php на prons.kz устанавливает PHPSESSID и BITRIX_SM_* —
+            // собираем все Set-Cookie для встроенного браузера.
+            await _completeLogin(
+              token: data["result"]["token"].toString(),
+              userId: data["result"]["user_id"]?.toString(),
+              fullName: data["result"]["full_name"]?.toString(),
+              cookies: dioResp.headers.map['set-cookie'] ?? const [],
+            );
           } else {
             setState(() {
               _errorMessage = data["error_description"] ?? "Ошибка авторизации";
@@ -182,6 +236,26 @@ class _LoginScreenState extends State<LoginScreen > {
                         ),
                       ),
               ),
+              if (_badgeAvailable && !_isLoading) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: _scanBadge,
+                    icon: const Icon(Icons.qr_code_scanner),
+                    label: const Text(
+                      "Войти по бейджу",
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF2E7D32),
+                      side: const BorderSide(color: Color(0xFF4CAF50), width: 1.5),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

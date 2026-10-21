@@ -5,6 +5,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/auth/auth_service.dart';
+import 'package:offlinesvet/auth/badge_api.dart';
+import 'package:offlinesvet/auth/device_registration_screen.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
@@ -22,10 +24,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _managerName = '';
   Customer? _activeCustomer;
 
+  // Вход по бейджу: администратор видит регистрацию планшета, а на
+  // зарегистрированном планшете у всех есть «Сменить менеджера».
+  bool _isAdmin = false;
+  bool _badgeDevice = false;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadBadgeInfo();
+  }
+
+  Future<void> _loadBadgeInfo() async {
+    try {
+      final (isAdmin, device) = await BadgeApi().me();
+      if (!mounted) return;
+      setState(() {
+        _isAdmin = isAdmin;
+        _badgeDevice = device.registered;
+      });
+    } catch (_) {} // без сети пункты просто не показываем
+  }
+
+  /// Выйти и сразу открыть сканер бейджа — передача планшета за секунды.
+  Future<void> _switchManager() async {
+    await AuthService.logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/auth', (_) => false, arguments: {'scan': true});
   }
 
   Future<void> _load() async {
@@ -213,8 +239,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => ClientCabinetScreen(customer: _activeCustomer))),
               ),
+              if (_isAdmin) ...[
+                const Divider(height: 1, indent: 56),
+                _MenuItem(
+                  icon: Icons.qr_code_2,
+                  label: 'Планшет для входа по бейджу',
+                  onTap: () async {
+                    await Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const DeviceRegistrationScreen()));
+                    _loadBadgeInfo();
+                  },
+                ),
+              ],
             ]),
           ),
+
+          if (_badgeDevice) ...[
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: _switchManager,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Row(children: [
+                  Icon(Icons.qr_code_scanner, color: Color(0xFF4CAF50), size: 22),
+                  SizedBox(width: 14),
+                  Text(
+                    'Сменить менеджера',
+                    style: TextStyle(fontSize: 16, color: Color(0xFF2E7D32), fontWeight: FontWeight.w500),
+                  ),
+                ]),
+              ),
+            ),
+          ],
 
           const SizedBox(height: 24),
 

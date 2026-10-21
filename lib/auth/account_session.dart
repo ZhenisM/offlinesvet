@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/cart/cart_api_service_offline.dart';
 import 'package:offlinesvet/cart/cart_local_store.dart';
+import 'package:offlinesvet/learning/reports_screens.dart' show SectionsAccess;
 
 /// Данные, привязанные к вошедшему менеджеру, которые нужно сбрасывать
 /// при смене аккаунта: ФИО менеджера и локальная копия корзин (по ней
@@ -43,6 +44,9 @@ class AccountSession {
     await prefs.remove('session_cookies');
     await prefs.remove(_cartsOwnerKey);
     await CartLocalStore.clearAll();
+    // Разделы меню («Статистика», «Графики») — права прошлого пользователя.
+    // Сбрасываем, чтобы следующий менеджер на планшете их не увидел.
+    SectionsAccess.value.value = null;
   }
 
   /// Подтягивает корзины менеджера с сервера в фоне. Значок корзины
