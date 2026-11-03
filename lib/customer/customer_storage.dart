@@ -43,6 +43,13 @@ class CustomerStorage {
     return prefs.getString('user_name');
   }
 
+  /// Email менеджера из login.php / входа по бейджу — для поиска сотрудника
+  /// в Bitrix24 (BitrixService.resolveManagerId).
+  static Future<String?> currentManagerEmail() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('user_email');
+  }
+
   /// Список всех клиентов, выбранных/созданных текущим менеджером.
   static Future<List<Customer>> loadAll() async {
     final userId = await _currentUserId();

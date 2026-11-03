@@ -88,11 +88,17 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
         return;
       }
 
-      final contactId = await _bitrixService.createContact(name: name, phone: phone);
+      // Ответственный — менеджер, который сейчас вошёл в приложение (по email,
+      // затем по ФИО). Ищем до создания контакта: и контакт, и лид — на него.
       final managerName = await CustomerStorage.currentManagerName();
-      final managerId = managerName != null
-          ? await _bitrixService.findUserIdByName(managerName)
-          : null;
+      final managerId = await _bitrixService.resolveManagerId(
+        email: await CustomerStorage.currentManagerEmail(),
+        fullName: managerName,
+      );
+      if (managerId == null) {
+        debugPrint('NewCustomer: ответственный в Bitrix24 не найден (ФИО: $managerName)');
+      }
+      final contactId = await _bitrixService.createContact(name: name, phone: phone, managerId: managerId);
       final communicationId = CallRecordingService.instance.currentCommunicationId;
       final leadId = await _bitrixService.createLead(
         contactId: contactId,

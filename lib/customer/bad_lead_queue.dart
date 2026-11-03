@@ -24,6 +24,8 @@ class PendingBadLeadJob {
   final List<String> psychotype;
   final List<String> failReasons;
   final String? managerName;
+  /// Email менеджера — основной ключ поиска ответственного в Bitrix24.
+  final String? managerEmail;
   final String? recordingPath;
   /// Наш ID коммуникации (order_id в 4sell) → ORIGIN_ID лида.
   final String? communicationId;
@@ -43,6 +45,7 @@ class PendingBadLeadJob {
     required this.psychotype,
     required this.failReasons,
     required this.managerName,
+    this.managerEmail,
     required this.recordingPath,
     this.communicationId,
     this.clientName,
@@ -61,6 +64,7 @@ class PendingBadLeadJob {
         'psychotype': psychotype,
         'failReasons': failReasons,
         'managerName': managerName,
+        'managerEmail': managerEmail,
         'recordingPath': recordingPath,
         'communicationId': communicationId,
         'clientName': clientName,
@@ -79,6 +83,7 @@ class PendingBadLeadJob {
         psychotype: (json['psychotype'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
         failReasons: (json['failReasons'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
         managerName: json['managerName'] as String?,
+        managerEmail: json['managerEmail'] as String?,
         recordingPath: json['recordingPath'] as String?,
         communicationId: json['communicationId'] as String?,
         clientName: json['clientName'] as String?,
@@ -152,10 +157,10 @@ class BadLeadQueue {
 
     final job = _queue.first;
     try {
-      int? managerId;
-      if (job.managerName != null && job.managerName!.isNotEmpty) {
-        managerId = await _bitrixService.findUserIdByName(job.managerName!);
-      }
+      final managerId = await _bitrixService.resolveManagerId(
+        email: job.managerEmail,
+        fullName: job.managerName,
+      );
 
       // Телефон указан — ищем контакт (бывший покупатель). Привязываем,
       // только если совпадение одно; ошибка поиска лид не блокирует.

@@ -69,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen > {
     });
     try {
       final r = await BadgeApi().login(code);
-      await _completeLogin(token: r.token, userId: r.userId, fullName: r.fullName, cookies: r.cookies);
+      await _completeLogin(token: r.token, userId: r.userId, fullName: r.fullName, email: r.email, cookies: r.cookies);
     } on BadgeException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } finally {
@@ -82,6 +82,7 @@ class _LoginScreenState extends State<LoginScreen > {
     required String token,
     required String? userId,
     required String? fullName,
+    String? email,
     required List<String> cookies,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -90,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen > {
       await prefs.setString("user_id", userId);
     }
     // ФИО и корзины — от нового менеджера, а не от прошлого входа.
-    await AccountSession.onLogin(userId: userId, fullName: fullName);
+    await AccountSession.onLogin(userId: userId, fullName: fullName, email: email);
 
     // Куки сессии prons.kz (PHPSESSID, BITRIX_SM_*) — для встроенного браузера.
     if (cookies.isNotEmpty) {
@@ -139,6 +140,7 @@ class _LoginScreenState extends State<LoginScreen > {
               token: data["result"]["token"].toString(),
               userId: data["result"]["user_id"]?.toString(),
               fullName: data["result"]["full_name"]?.toString(),
+              email: data["result"]["email"]?.toString(),
               cookies: dioResp.headers.map['set-cookie'] ?? const [],
             );
           } else {

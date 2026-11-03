@@ -15,7 +15,7 @@ class AccountSession {
   static const _cartsOwnerKey = 'carts_owner_id';
 
   /// Вызывать сразу после успешного входа.
-  static Future<void> onLogin({required String? userId, required String? fullName}) async {
+  static Future<void> onLogin({required String? userId, required String? fullName, String? email}) async {
     final prefs = await SharedPreferences.getInstance();
 
     // ФИО — только от текущего входа. Если сервер его не прислал, профиль
@@ -24,6 +24,12 @@ class AccountSession {
       await prefs.setString('user_name', fullName.trim());
     } else {
       await prefs.remove('user_name');
+    }
+    // Email — тоже только от текущего входа (по нему ищется ответственный в Bitrix24).
+    if (email != null && email.trim().isNotEmpty) {
+      await prefs.setString('user_email', email.trim());
+    } else {
+      await prefs.remove('user_email');
     }
 
     // Корзины другого менеджера убираем сразу, чтобы значок не показывал
@@ -41,6 +47,7 @@ class AccountSession {
   static Future<void> onLogout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user_name');
+    await prefs.remove('user_email');
     await prefs.remove('session_cookies');
     await prefs.remove(_cartsOwnerKey);
     await CartLocalStore.clearAll();

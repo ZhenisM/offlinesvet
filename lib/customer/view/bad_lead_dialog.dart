@@ -132,6 +132,7 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
         psychotype: _psychotype.toList(),
         failReasons: _failReasons.toList(),
         managerName: managerName,
+        managerEmail: await CustomerStorage.currentManagerEmail(),
         recordingPath: recordingPath,
         communicationId: recording?.communicationId,
         clientName: _nameController.text.trim().isEmpty ? null : _nameController.text.trim(),

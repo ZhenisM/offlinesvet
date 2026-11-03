@@ -21,10 +21,11 @@ class BadgeDevice {
 
 /// Результат входа по бейджу — в том же виде, что login.php.
 class BadgeLoginResult {
-  BadgeLoginResult({required this.token, this.userId, this.fullName, this.cookies = const []});
+  BadgeLoginResult({required this.token, this.userId, this.fullName, this.email, this.cookies = const []});
   final String token;
   final String? userId;
   final String? fullName;
+  final String? email;
   final List<String> cookies; // Set-Cookie сессии prons.kz для встроенного браузера
 }
 
@@ -109,6 +110,7 @@ class BadgeApi {
       token: res['token'].toString(),
       userId: res['user_id']?.toString(),
       fullName: res['full_name']?.toString(),
+      email: res['email']?.toString(),
       cookies: cookies,
     );
   }

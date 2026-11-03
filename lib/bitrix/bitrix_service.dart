@@ -131,6 +131,12 @@ const Map<String, String> failReasonOptions = {
 /// кастомное UF_CRM_...), сверено через crm.status.list.
 const String badLeadStatusId = 'JUNK';
 
+/// Статус лида из «Анкеты лида» — завершённый «Качественный лид» (успешная
+/// финальная стадия воронки лидов, системный STATUS_ID = CONVERTED).
+/// Раньше статус не передавался, и Bitrix ставил первую стадию
+/// «ЛИД зашел в салон» — лид оставался незакрытым.
+const String qualityLeadStatusId = 'CONVERTED';
+
 /// Источник лида "Приложение Svet" — системное поле SOURCE_ID (не путать с
 /// UF_CRM_1673861444, это разные поля: SOURCE_ID — стандартное поле лида
 /// "Источник", а UF_CRM_1673861444 — отдельный кастомный справочник).
@@ -263,6 +269,7 @@ class BitrixService {
     required String name,
     String lastName = '',
     required String phone,
+    int? managerId,
   }) async {
     await _requireInternet();
 
@@ -276,6 +283,8 @@ class BitrixService {
             'PHONE': [
               {'VALUE': phone, 'VALUE_TYPE': 'WORK'},
             ],
+            // Без этого поля ответственным за контакт становится владелец вебхука.
+            if (managerId != null) 'ASSIGNED_BY_ID': managerId,
           },
         },
       );
@@ -303,6 +312,38 @@ class BitrixService {
   /// LAST_NAME) — такая же точная строка "Леготкин Максим" нигде в
   /// профиле не хранится целиком, поэтому широкий FILTER[FIND] по всей
   /// строке её не находит. Разбиваем на слова и ищем прицельно по полям.
+  /// Сотрудник Bitrix24 для ASSIGNED_BY_ID: сначала по email (он у сотрудника
+  /// одинаковый на сайте и в Bitrix24 и не зависит от написания ФИО), затем
+  /// по ФИО. null — не нашли однозначно (тогда Bitrix поставит владельца вебхука).
+  Future<int?> resolveManagerId({String? email, String? fullName}) async {
+    final e = email?.trim() ?? '';
+    if (e.isNotEmpty) {
+      final byEmail = await _findUserIdByEmail(e);
+      if (byEmail != null) return byEmail;
+    }
+    final n = fullName?.trim() ?? '';
+    if (n.isNotEmpty) return findUserIdByName(n);
+    return null;
+  }
+
+  Future<int?> _findUserIdByEmail(String email) async {
+    try {
+      final response = await dio.get(
+        '$_bitrixWebhookUrl/user.get.json',
+        queryParameters: {'FILTER[EMAIL]': email},
+      );
+      // Уволенные (неактивные) сотрудники с тем же email не учитываются
+      final results = ((_unwrapResult(response)['result'] as List?) ?? const [])
+          .where((u) => u is Map && u['ACTIVE'] != false && u['ACTIVE'] != 'N')
+          .toList();
+      if (results.length == 1) return int.tryParse('${results.first['ID']}');
+      debugPrint('resolveManagerId: по email "$email" найдено ${results.length} пользователей Bitrix24');
+    } catch (e) {
+      debugPrint('resolveManagerId: ошибка user.get по email ($e)');
+    }
+    return null;
+  }
+
   Future<int?> findUserIdByName(String fullName) async {
     final parts = fullName.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.isEmpty) return null;
@@ -392,6 +433,7 @@ class BitrixService {
           'fields': {
             'TITLE': 'Новый клиент (приложение): $name',
             'SOURCE_ID': appSourceId,
+            'STATUS_ID': qualityLeadStatusId,
             'NAME': name,
             'PHONE': [
               {'VALUE': phone, 'VALUE_TYPE': 'WORK'},
