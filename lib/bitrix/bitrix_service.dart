@@ -270,6 +270,7 @@ class BitrixService {
     String lastName = '',
     required String phone,
     int? managerId,
+    Map<String, dynamic>? extraFields,
   }) async {
     await _requireInternet();
 
@@ -285,6 +286,8 @@ class BitrixService {
             ],
             // Без этого поля ответственным за контакт становится владелец вебхука.
             if (managerId != null) 'ASSIGNED_BY_ID': managerId,
+            // Доп. поля полной анкеты: e-mail, дата рождения, ИИН, предпочтения
+            ...?extraFields,
           },
         },
       );
@@ -423,15 +426,19 @@ class BitrixService {
     String sourceId = defaultSourceId,
     int? managerId,
     String? communicationId,
+    Map<String, dynamic>? extraFields,
+    String? whatSought,
   }) async {
     await _requireInternet();
+    final sought = whatSought?.trim() ?? '';
 
     try {
       final response = await dio.post(
         '$_bitrixWebhookUrl/crm.lead.add.json',
         data: {
           'fields': {
-            'TITLE': 'Новый клиент (приложение): $name',
+            // «Что искал клиент» из полной анкеты дописываем в название лида
+            'TITLE': 'Новый клиент (приложение): $name${sought.isNotEmpty ? ' — $sought' : ''}',
             'SOURCE_ID': appSourceId,
             'STATUS_ID': qualityLeadStatusId,
             'NAME': name,
@@ -453,6 +460,9 @@ class BitrixService {
               'ORIGINATOR_ID': FourSellConfig.bitrixOriginatorId,
               'ORIGIN_ID': communicationId,
             },
+            // Поля полной анкеты (помещения, высота, квадратура, стиль, источник,
+            // возраст, психотип и т.д.) — коды как в CRM-форме №81 сайта.
+            ...?extraFields,
           },
         },
       );

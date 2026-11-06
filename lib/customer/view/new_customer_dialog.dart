@@ -6,6 +6,8 @@ import 'package:offlinesvet/cart/cart.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
 import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
+import 'package:offlinesvet/customer/lead_form/lead_form_model.dart';
+import 'package:offlinesvet/customer/lead_form/lead_form_section.dart';
 
 Future<bool?> showNewCustomerDialog(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -31,6 +33,8 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   final _nameController   = TextEditingController();
   final _phoneController  = TextEditingController();
   final _commentController = TextEditingController();
+  /// Полная анкета (как CRM-форма №81 на сайте).
+  final _extra = LeadFormData();
 
   final _bitrixService  = BitrixService(dio: Dio());
   final _cartApiService = CartApiService(dio: Dio());
@@ -70,11 +74,17 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
     _nameController.dispose();
     _phoneController.dispose();
     _commentController.dispose();
+    _extra.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final extraError = _extra.validate();
+    if (extraError != null) {
+      setState(() => _error = extraError);
+      return;
+    }
 
     setState(() { _loading = true; _error = null; _existingMatches = null; });
 
@@ -98,7 +108,16 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
       if (managerId == null) {
         debugPrint('NewCustomer: ответственный в Bitrix24 не найден (ФИО: $managerName)');
       }
-      final contactId = await _bitrixService.createContact(name: name, phone: phone, managerId: managerId);
+      final contactId = await _bitrixService.createContact(
+        name: name,
+        phone: phone,
+        managerId: managerId,
+        extraFields: {
+          // Тип контакта как в форме сайта: «Клиенты» или «Дизайнер»
+          'TYPE_ID': _type == CustomerType.designer ? '1' : 'CLIENT',
+          ..._extra.contactFields(),
+        },
+      );
       final communicationId = CallRecordingService.instance.currentCommunicationId;
       final leadId = await _bitrixService.createLead(
         contactId: contactId,
@@ -109,6 +128,8 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
         sourceId: _sourceId,
         managerId: managerId,
         communicationId: communicationId,
+        extraFields: _extra.leadFields(),
+        whatSought: _extra.whatSought,
       );
       _recordingHandedOff = true;
 
@@ -266,10 +287,17 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
             ),
           ),
 
-          // Заголовок
-          const Text(
-            'Анкета лида',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          // Заголовок и кнопка закрытия
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Анкета лида',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              _closeButton(),
+            ],
           ),
           const SizedBox(height: 20),
 
@@ -314,7 +342,8 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
               )),
             ]),
           ),
-          const SizedBox(height: 16),
+          // Полная анкета: помещения, высота, квадратура, стиль, источник и т.д.
+          LeadFormSection(data: _extra),
 
           // Комментарий
           _WhiteInput(
@@ -364,6 +393,26 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   // -------------------------------------------------------
   // Найден существующий клиент
   // -------------------------------------------------------
+  /// Крестик в круге: закрыть анкету. Запись разговора, начатая анкетой,
+  /// при этом выбрасывается (см. dispose), лид не создаётся.
+  Widget _closeButton() => Tooltip(
+        message: 'Закрыть анкету',
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _loading ? null : () => Navigator.of(context).maybePop(),
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.black26),
+            ),
+            child: const Icon(Icons.close, size: 20, color: Colors.black54),
+          ),
+        ),
+      );
+
   Widget _buildExistingMatches() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,9 +428,16 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
             ),
           ),
         ),
-        const Text(
-          'Клиент с таким номером уже существует',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Клиент с таким номером уже существует',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+            _closeButton(),
+          ],
         ),
         const SizedBox(height: 12),
         ..._existingMatches!.map((m) => Container(

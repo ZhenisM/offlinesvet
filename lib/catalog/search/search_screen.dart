@@ -8,6 +8,7 @@ import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/repositories/products/local_db.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/catalog/search/photo_search_screen.dart';
+import 'package:offlinesvet/common/catalog_grid.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.initialQuery = ''});
@@ -187,7 +188,7 @@ class _SearchScreenState extends State<SearchScreen> {
     return GridView.builder(
       padding: const EdgeInsets.all(12),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
+        crossAxisCount: catalogColumns(context),
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
         childAspectRatio: 0.62,

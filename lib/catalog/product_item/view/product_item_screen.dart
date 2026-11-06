@@ -12,6 +12,8 @@ import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/cart/view/add_to_cart_sheet.dart';
+import 'package:offlinesvet/common/catalog_grid.dart';
+import 'package:offlinesvet/catalog/search/photo_search_screen.dart';
 
 class ProductItemScreen extends StatefulWidget {
   const ProductItemScreen({super.key});
@@ -226,7 +228,10 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
           if (_images.isNotEmpty) ...[
             SizedBox(
               height: 260,
-              child: PageView.builder(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: PageView.builder(
                 controller: _imagePageController,
                 itemCount: null, // бесконечно — по кругу
                 physics: _images.length > 1 ? null : const NeverScrollableScrollPhysics(),
@@ -249,6 +254,41 @@ class _ProductItemScreenState extends State<ProductItemScreen> {
                   ),
                 );
                 },
+              ),
+                  ),
+                  // «Найти похожие» — поиск по фото, которое сейчас показано
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Material(
+                      color: Colors.white.withValues(alpha: 0.94),
+                      elevation: 2,
+                      shape: const StadiumBorder(),
+                      child: InkWell(
+                        customBorder: const StadiumBorder(),
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => PhotoSearchScreen(
+                              initialImageUrl: _images[_currentImageIndex % _images.length],
+                            ),
+                          ),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.fromLTRB(10, 7, 12, 7),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.photo_camera_outlined, size: 18, color: Colors.black87),
+                              SizedBox(width: 6),
+                              Text('Найти похожие', style: TextStyle(fontSize: 14, color: Colors.black87)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             if (_images.length > 1) ...[
@@ -591,7 +631,7 @@ class _RelatedBlockState extends State<_RelatedBlock> {
 
   @override
   Widget build(BuildContext context) {
-    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
+    final columns = catalogColumns(context);
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,

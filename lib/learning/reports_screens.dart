@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/learning/web_pages.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
+import 'package:offlinesvet/common/catalog_grid.dart';
 
 const _green = Color(0xFF4CAF50);
 const _bg = Color(0xFFF3F2F7);
@@ -424,7 +425,7 @@ class _TopItemsScreenState extends State<TopItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
+    final columns = catalogColumns(context);
     return Scaffold(
       backgroundColor: _bg,
       appBar: _bar('Лидеры продаж'),

@@ -8,6 +8,7 @@ import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
 import 'package:offlinesvet/cart/cart_api_service.dart';
 import 'package:offlinesvet/customer/prons_api_service.dart';
+import 'package:offlinesvet/common/catalog_grid.dart';
 
 class ClientOrdersScreen extends StatefulWidget {
   const ClientOrdersScreen({super.key, required this.customer});
@@ -384,7 +385,7 @@ class _ClientOrdersScreenState extends State<ClientOrdersScreen> {
                         controller: _scrollCtrl,
                         padding: const EdgeInsets.all(12),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: MediaQuery.of(context).size.width >= 576 ? 3 : 2,
+                          crossAxisCount: catalogColumns(context),
                           crossAxisSpacing: 10,
                           mainAxisSpacing: 10,
                           mainAxisExtent: 310, // фиксированная высота — достаточно для всех полей + кнопки

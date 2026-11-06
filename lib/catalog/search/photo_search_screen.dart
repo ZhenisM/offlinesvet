@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'dart:io';
+
+import 'package:dio/dio.dart';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:offlinesvet/common/catalog_grid.dart';
 import 'package:offlinesvet/catalog/product_list/widgets/product_tile.dart';
 import 'package:offlinesvet/catalog/search/photo_region_selector.dart';
 import 'package:offlinesvet/catalog/search/photo_search_service.dart';
@@ -11,7 +16,10 @@ import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 /// из галереи (например, присланный клиентом в WhatsApp), сервер находит
 /// похожие товары каталога.
 class PhotoSearchScreen extends StatefulWidget {
-  const PhotoSearchScreen({super.key});
+  const PhotoSearchScreen({super.key, this.initialImageUrl});
+
+  /// «Найти похожие» с карточки товара: искать сразу по этому фото товара.
+  final String? initialImageUrl;
 
   @override
   State<PhotoSearchScreen> createState() => _PhotoSearchScreenState();
@@ -19,20 +27,38 @@ class PhotoSearchScreen extends StatefulWidget {
 
 class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
   static const _green = Color(0xFF4CAF50);
+  static const _fullRegion = Rect.fromLTRB(0, 0, 1, 1);
+  static const _researchDelay = Duration(milliseconds: 400);
 
   final _service = PhotoSearchService();
   final _picker = ImagePicker();
 
-  static const _fullRegion = Rect.fromLTRB(0, 0, 1, 1);
-
-  File? _original;            // снимок целиком, как его выбрал менеджер
+  File? _original;            // снимок целиком
   Rect _region = _fullRegion; // выделенная область (доли 0…1)
-  bool _editing = false;      // открыт выбор области
   File? _photo;               // то, что ушло в поиск (вырезанная область)
-  bool _loading = false;
+  bool _loading = false;      // первый поиск — экран ожидания
+  bool _refreshing = false;   // повторный поиск после сдвига рамки — выдача остаётся на месте
+  String? _loadingText;
   String? _error;
   PhotoSearchResult? _result;
   bool _feedbackSent = false;
+  Timer? _debounce;
+  int _seq = 0;               // номер запроса: ответы на устаревшие запросы отбрасываем
+
+  @override
+  void initState() {
+    super.initState();
+    final url = widget.initialImageUrl;
+    if (url != null && url.isNotEmpty) _fromUrl(url);
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  // ── откуда фото ───────────────────────────────────────────────────────
 
   Future<void> _pick(ImageSource source) async {
     final XFile? file;
@@ -52,24 +78,53 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
       return;
     }
     if (file == null) return; // менеджер передумал
-    setState(() {
-      _original = File(file!.path);
-      _region = _fullRegion;
-      _editing = true;
-      _error = null;
-      _result = null;
-    });
+    _startWith(File(file.path));
   }
 
-  /// Вырезает выделенную область и ищет по ней.
+  /// Фото товара по адресу (кнопка «Найти похожие» на карточке товара).
+  Future<void> _fromUrl(String url) async {
+    setState(() {
+      _loading = true;
+      _loadingText = 'Загружаю фото товара…';
+      _error = null;
+    });
+    try {
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/similar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await Dio().download(url, path,
+          options: Options(receiveTimeout: const Duration(seconds: 20)));
+      if (!mounted) return;
+      _startWith(File(path));
+    } catch (e) {
+      debugPrint('PhotoSearch: фото товара не загрузилось ($e)');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Не удалось загрузить фото товара. Проверьте интернет и попробуйте ещё раз.';
+      });
+    }
+  }
+
+  /// Новое фото: сразу ищем по всему снимку, рамку можно двигать потом.
+  void _startWith(File file) {
+    _original = file;
+    _region = _fullRegion;
+    _result = null;
+    _run(file, firstSearch: true);
+  }
+
+  // ── поиск ─────────────────────────────────────────────────────────────
+
+  /// Рамку отпустили — через короткую паузу ищем по новой области.
+  void _onRegionChangeEnd(Rect r) {
+    _region = r;
+    _debounce?.cancel();
+    _debounce = Timer(_researchDelay, _searchRegion);
+  }
+
   Future<void> _searchRegion() async {
     final src = _original;
     if (src == null) return;
-    setState(() {
-      _editing = false;
-      _loading = true;
-      _photo = src;
-    });
     File photo;
     try {
       photo = await cropPhotoRegion(src, _region);
@@ -81,50 +136,65 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
     _run(photo);
   }
 
-  Future<void> _run(File photo) async {
+  Future<void> _run(File photo, {bool firstSearch = false}) async {
+    final seq = ++_seq;
     setState(() {
       _photo = photo;
-      _loading = true;
       _error = null;
-      _result = null;
       _feedbackSent = false;
+      if (firstSearch || _result == null) {
+        _loading = true;
+        _loadingText = 'Ищу похожие светильники…';
+      } else {
+        _refreshing = true;
+      }
     });
     try {
       final r = await _service.search(photo.path);
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return; // пока искали, рамку сдвинули ещё раз
       setState(() {
         _result = r;
         _loading = false;
+        _refreshing = false;
       });
     } on PhotoSearchException catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return;
       setState(() {
         _error = e.message;
         _loading = false;
+        _refreshing = false;
       });
     } catch (e) {
       debugPrint('PhotoSearch: $e');
-      if (!mounted) return;
+      if (!mounted || seq != _seq) return;
       setState(() {
         _error = 'Не удалось выполнить поиск. Попробуйте ещё раз.';
         _loading = false;
+        _refreshing = false;
       });
     }
   }
 
-  void _reset() => setState(() {
-        _original = null;
-        _photo = null;
-        _result = null;
-        _error = null;
-        _editing = false;
-      });
+  void _reset() {
+    _debounce?.cancel();
+    _seq++;
+    setState(() {
+      _original = null;
+      _photo = null;
+      _result = null;
+      _error = null;
+      _loading = false;
+      _refreshing = false;
+    });
+  }
 
   void _sendFeedback(String verdict) {
     final q = _result?.queryId ?? '';
     _service.feedback(q, verdict);
     setState(() => _feedbackSent = true);
   }
+
+  // ── экран ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +204,7 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
         backgroundColor: _green,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('Поиск по фото'),
+        title: Text(widget.initialImageUrl != null ? 'Похожие товары' : 'Поиск по фото'),
       ),
       body: _buildBody(),
       bottomNavigationBar: const AppBottomNavBar(currentTab: AppBottomTab.catalog),
@@ -143,147 +213,82 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
 
   Widget _buildBody() {
     if (_loading) return _buildLoading();
-    if (_editing && _original != null) return _buildEditor();
-    if (_result != null) return _buildResults(_result!);
+    if (_original != null && (_result != null || _error != null)) return _buildWorkspace();
     return _buildPicker();
   }
-
-  // ── выбор фото ────────────────────────────────────────────────────────
 
   Widget _buildPicker() {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.photo_camera_outlined, size: 64, color: Colors.grey),
-            const SizedBox(height: 12),
-            const Text(
-              'Сфотографируйте светильник или выберите фото из галереи — '
-              'например, снимок, который клиент прислал в WhatsApp.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54, fontSize: 15),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () => _pick(ImageSource.camera),
-                icon: const Icon(Icons.photo_camera),
-                label: const Text('Сфотографировать', style: TextStyle(fontSize: 16)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.photo_camera_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 12),
+              const Text(
+                'Сфотографируйте светильник или выберите фото из галереи — '
+                'например, снимок, который клиент прислал в WhatsApp.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black54, fontSize: 15),
               ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.black87,
-                  side: const BorderSide(color: Colors.black26),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () => _pick(ImageSource.gallery),
-                icon: const Icon(Icons.photo_library_outlined),
-                label: const Text('Выбрать из галереи', style: TextStyle(fontSize: 16)),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 20),
-              Container(
+              const SizedBox(height: 24),
+              SizedBox(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFBECEB),
-                  borderRadius: BorderRadius.circular(10),
+                height: 48,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _green,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => _pick(ImageSource.camera),
+                  icon: const Icon(Icons.photo_camera),
+                  label: const Text('Сфотографировать', style: TextStyle(fontSize: 16)),
                 ),
-                child: Text(_error!, style: const TextStyle(color: Color(0xFF9B2C22))),
               ),
-              if (_photo != null)
-                TextButton(
-                  onPressed: () => _run(_photo!),
-                  child: const Text('Повторить с этим фото'),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.black87,
+                    side: const BorderSide(color: Colors.black26),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => _pick(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Выбрать из галереи', style: TextStyle(fontSize: 16)),
                 ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 20),
+                _errorBox(_error!),
+                if (widget.initialImageUrl != null && _original == null)
+                  TextButton(
+                    onPressed: () => _fromUrl(widget.initialImageUrl!),
+                    child: const Text('Повторить с фото товара'),
+                  ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 
-  // ── выбор области ─────────────────────────────────────────────────────
-
-  Widget _buildEditor() {
-    return Column(
-      children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
-          child: Text(
-            'Выделите светильник рамкой — потяните за зелёные уголки. '
-            'Так поиск будет точнее.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54, fontSize: 14),
-          ),
+  Widget _errorBox(String text) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFBECEB),
+          borderRadius: BorderRadius.circular(10),
         ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: PhotoRegionSelector(
-              image: _original!,
-              region: _region,
-              onChanged: (r) => setState(() => _region = r),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 48,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black87,
-                      side: const BorderSide(color: Colors.black26),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: _reset,
-                    child: const Text('Другое фото', style: TextStyle(fontSize: 15)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SizedBox(
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _green,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: _searchRegion,
-                    icon: const Icon(Icons.search),
-                    label: const Text('Найти', style: TextStyle(fontSize: 15)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── ожидание ──────────────────────────────────────────────────────────
+        child: Text(text, style: const TextStyle(color: Color(0xFF9B2C22))),
+      );
 
   Widget _buildLoading() {
     return Center(
@@ -298,108 +303,137 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
           const SizedBox(height: 20),
           const CircularProgressIndicator(),
           const SizedBox(height: 12),
-          const Text('Ищу похожие светильники…',
-              style: TextStyle(color: Colors.black54, fontSize: 15)),
+          Text(_loadingText ?? 'Ищу похожие светильники…',
+              style: const TextStyle(color: Colors.black54, fontSize: 15)),
         ],
       ),
     );
   }
 
-  // ── выдача ────────────────────────────────────────────────────────────
+  // ── рабочая область: фото с рамкой + выдача ───────────────────────────
+  // Рамку можно двигать сколько угодно раз: после каждого отпускания
+  // поиск повторяется по выделенной области, выдача обновляется на месте.
+  // На широком экране (планшет горизонтально) фото слева, товары справа;
+  // на телефоне — фото сверху, товары листаются под ним.
 
-  Widget _buildResults(PhotoSearchResult r) {
-    final n = r.products.length;
-    final columns = MediaQuery.of(context).size.width >= 576 ? 3 : 2;
+  Widget _buildWorkspace() {
+    final wide = MediaQuery.of(context).size.width >= 900;
+    final selector = _buildSelectorPanel(wide);
+    final results = _buildResults();
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 340, child: selector),
+          Expanded(child: results),
+        ],
+      );
+    }
+    final h = MediaQuery.of(context).size.height;
+    return Column(
+      children: [
+        SizedBox(height: (h * 0.32).clamp(180.0, 300.0), child: selector),
+        Expanded(child: results),
+      ],
+    );
+  }
 
-    return CustomScrollView(
+  Widget _buildSelectorPanel(bool wide) {
+    final photo = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      child: Container(
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.all(6),
+        child: PhotoRegionSelector(
+          image: _original!,
+          region: _region,
+          onChanged: (r) => setState(() => _region = r),
+          onChangeEnd: _onRegionChangeEnd,
+        ),
+      ),
+    );
+    final hint = Padding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 8, 0),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text('Двигайте рамку — товары обновятся сами',
+                style: TextStyle(fontSize: 12.5, color: Colors.black54)),
+          ),
+          TextButton(onPressed: _reset, child: const Text('Другое фото')),
+        ],
+      ),
+    );
+    if (wide) {
+      return Column(
+        children: [
+          SizedBox(height: (MediaQuery.of(context).size.height * 0.5).clamp(240.0, 420.0), child: photo),
+          hint,
+        ],
+      );
+    }
+    return Column(children: [Expanded(child: photo), hint]);
+  }
+
+  Widget _buildResults() {
+    final r = _result;
+    final n = r?.products.length ?? 0;
+    final columns = catalogColumns(context) - (MediaQuery.of(context).size.width >= 900 ? 1 : 0);
+    final whole = _region == _fullRegion;
+
+    final grid = CustomScrollView(
       slivers: [
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_photo != null)
-                  GestureDetector(
-                    // Нажатие на миниатюру — поправить область и искать заново
-                    onTap: _original == null ? null : () => setState(() => _editing = true),
-                    child: Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: Image.file(_photo!, width: 56, height: 56, fit: BoxFit.cover),
-                        ),
-                        if (_original != null)
-                          Positioned(
-                            right: 2,
-                            bottom: 2,
-                            child: Container(
-                              padding: const EdgeInsets.all(3),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.crop, size: 14, color: _green),
-                            ),
-                          ),
-                      ],
-                    ),
+                if (r != null) ...[
+                  Text(
+                    n > 0 ? 'Нашлось $n ${_plural(n, 'товар', 'товара', 'товаров')}' : 'Похожих товаров не нашлось',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                   ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        n > 0 ? 'Нашлось $n ${_plural(n, 'товар', 'товара', 'товаров')}' : 'Похожих товаров не нашлось',
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 2),
-                      Text('Поиск занял ${_seconds(r.tookMs)}',
-                          style: const TextStyle(fontSize: 13, color: Colors.black54)),
-                    ],
-                  ),
-                ),
-                OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.black87,
-                    side: const BorderSide(color: Colors.black26),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: _reset,
-                  child: const Text('Другое фото'),
-                ),
+                  const SizedBox(height: 2),
+                  Text('${whole ? 'По всему фото' : 'По выделенной области'} · ${_seconds(r.tookMs)}',
+                      style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                ],
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  _errorBox(_error!),
+                ],
               ],
             ),
           ),
         ),
         if (n > 0) SliverToBoxAdapter(child: _buildFeedback()),
-        if (n == 0)
+        if (r != null && n == 0)
           const SliverFillRemaining(
             hasScrollBody: false,
             child: Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Попробуйте снять светильник ближе, целиком и на однотонном фоне.',
+                  'Выделите светильник рамкой поточнее или снимите его ближе, целиком и на однотонном фоне.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey, fontSize: 15),
                 ),
               ),
             ),
           )
-        else
+        else if (n > 0)
           SliverPadding(
             padding: const EdgeInsets.all(12),
             sliver: SliverGrid(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
+                crossAxisCount: columns < 2 ? 2 : columns,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
                 childAspectRatio: 0.62, // как в обычном поиске
               ),
               delegate: SliverChildBuilderDelegate(
                 (_, i) {
-                  final p = r.products[i];
+                  final p = r!.products[i];
                   final score = r.scores[p.id];
                   return Stack(
                     children: [
@@ -427,6 +461,19 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
               ),
             ),
           ),
+      ],
+    );
+
+    // Пока идёт повторный поиск — прежняя выдача бледнеет, сверху индикатор
+    return Stack(
+      children: [
+        AnimatedOpacity(
+          opacity: _refreshing ? 0.45 : 1,
+          duration: const Duration(milliseconds: 150),
+          child: IgnorePointer(ignoring: _refreshing, child: grid),
+        ),
+        if (_refreshing)
+          const Positioned(top: 0, left: 0, right: 0, child: LinearProgressIndicator(minHeight: 3)),
       ],
     );
   }

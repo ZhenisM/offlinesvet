@@ -14,11 +14,15 @@ class PhotoRegionSelector extends StatefulWidget {
     required this.image,
     required this.region,
     required this.onChanged,
+    this.onChangeEnd,
   });
 
   final File image;
   final Rect region;
   final ValueChanged<Rect> onChanged;
+
+  /// Палец отпущен после перемещения рамки — область выбрана окончательно.
+  final ValueChanged<Rect>? onChangeEnd;
 
   @override
   State<PhotoRegionSelector> createState() => _PhotoRegionSelectorState();
@@ -133,7 +137,11 @@ class _PhotoRegionSelectorState extends State<PhotoRegionSelector> {
         dragStartBehavior: DragStartBehavior.down,
         onPanStart: (d) => _onStart(d.localPosition, sel),
         onPanUpdate: (d) => _onUpdate(d.delta, img),
-        onPanEnd: (_) => _drag = _Drag.none,
+        onPanEnd: (_) {
+          final moved = _drag != _Drag.none;
+          _drag = _Drag.none;
+          if (moved) widget.onChangeEnd?.call(_region);
+        },
         child: Stack(
           children: [
             Positioned.fromRect(
