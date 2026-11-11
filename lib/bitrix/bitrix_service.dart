@@ -237,12 +237,26 @@ class BitrixService {
         '$_bitrixWebhookUrl/crm.contact.list.json',
         data: {
           'filter': {'ID': contactIds},
-          'select': ['ID', 'NAME', 'LAST_NAME', 'PHONE'],
+          'select': [
+            'ID', 'NAME', 'LAST_NAME', 'PHONE',
+            'TYPE_ID', // Тип контакта — по нему тип определяет сайт
+            'UF_CRM_1544076714', // Тип клиента (СВЕТ): 589 дизайнер / 591 клиент
+            _potentialProjectsField,
+          ],
         },
       );
 
       final listData = _unwrapResult(listResponse);
       final result = listData['result'] as List<dynamic>? ?? [];
+
+      // Проекты всех найденных контактов — заголовки одним запросом.
+      final dealIdsByContact = <String, List<String>>{};
+      for (final e in result) {
+        final item = e as Map<String, dynamic>;
+        dealIdsByContact[item['ID'].toString()] = _dealIdsFrom(item[_potentialProjectsField]);
+      }
+      final titles = await _dealTitles(dealIdsByContact.values.expand((x) => x).toSet().toList());
+      final contactTypes = await _contactTypeNames();
 
       return result.map((e) {
         final item = e as Map<String, dynamic>;
@@ -250,17 +264,99 @@ class BitrixService {
         final phoneValue = phones.isNotEmpty
             ? (phones.first as Map<String, dynamic>)['VALUE']?.toString() ?? ''
             : '';
+        final id = item['ID'].toString();
+        final typeRaw = item['UF_CRM_1544076714'];
+        final typeId = typeRaw is List
+            ? (typeRaw.isNotEmpty ? typeRaw.first.toString() : '')
+            : typeRaw?.toString() ?? '';
+        // Как на сайте (SvetApp\Client\Contact): тип = «Тип контакта»
+        // (TYPE_ID → название из справочника CONTACT_TYPE). Если тип
+        // контакта не задан — берём «Тип клиента (СВЕТ)».
+        final contactTypeName =
+            (contactTypes[item['TYPE_ID']?.toString() ?? ''] ?? '').toLowerCase();
+        final isDesigner = contactTypeName.isNotEmpty
+            ? contactTypeName.contains('дизайн')
+            : typeId == CustomerType.designer.bitrixFieldId;
 
         return CustomerSearchResult(
-          contactId: item['ID'].toString(),
+          contactId: id,
           name: item['NAME']?.toString() ?? '',
           lastName: item['LAST_NAME']?.toString() ?? '',
           phone: phoneValue,
+          type: isDesigner ? CustomerType.designer : CustomerType.client,
+          potentialDeals: [
+            for (final dealId in dealIdsByContact[id] ?? const <String>[])
+              // Сделку могли удалить — такой проект не показываем.
+              if (titles.containsKey(dealId)) PotentialDeal(id: dealId, title: titles[dealId]!),
+          ],
         );
       }).toList();
     } on DioException catch (e) {
       debugPrint('searchContactsByPhone: ошибка сети: $e');
       throw BitrixApiException('Ошибка соединения с Bitrix');
+    }
+  }
+
+  /// Поле контакта «Потенциальные проекты» — привязка к сделкам CRM,
+  /// значения вида "D_12345" (как на сайте, SvetApp\Client\Contact).
+  static const _potentialProjectsField = 'UF_CRM_1782219134';
+
+  static List<String> _dealIdsFrom(dynamic raw) {
+    final values = raw is List ? raw : (raw == null ? const [] : [raw]);
+    final ids = <String>[];
+    for (final v in values) {
+      final s = v.toString();
+      if (!s.startsWith('D_')) continue;
+      final id = s.substring(2);
+      if (id.isNotEmpty && !ids.contains(id)) ids.add(id);
+    }
+    return ids;
+  }
+
+  /// Справочник «Тип контакта» (STATUS_ID → название), кэш на время работы
+  /// приложения. Ошибка — пустой справочник, тогда работает запасное поле.
+  static Map<String, String>? _contactTypesCache;
+
+  Future<Map<String, String>> _contactTypeNames() async {
+    if (_contactTypesCache != null) return _contactTypesCache!;
+    try {
+      final r = await dio.post(
+        '$_bitrixWebhookUrl/crm.status.list.json',
+        data: {
+          'filter': {'ENTITY_ID': 'CONTACT_TYPE'},
+        },
+      );
+      final list = _unwrapResult(r)['result'] as List<dynamic>? ?? [];
+      return _contactTypesCache = {
+        for (final e in list)
+          (e as Map<String, dynamic>)['STATUS_ID'].toString(): e['NAME']?.toString() ?? '',
+      };
+    } catch (e) {
+      debugPrint('Тип контакта: не удалось получить справочник ($e)');
+      return const {};
+    }
+  }
+
+  /// Заголовки сделок по ID. Ошибка не ломает поиск клиента — просто
+  /// проекты не покажутся.
+  Future<Map<String, String>> _dealTitles(List<String> ids) async {
+    if (ids.isEmpty) return const {};
+    try {
+      final r = await dio.post(
+        '$_bitrixWebhookUrl/crm.deal.list.json',
+        data: {
+          'filter': {'ID': ids},
+          'select': ['ID', 'TITLE'],
+        },
+      );
+      final list = _unwrapResult(r)['result'] as List<dynamic>? ?? [];
+      return {
+        for (final e in list)
+          (e as Map<String, dynamic>)['ID'].toString(): e['TITLE']?.toString() ?? 'Сделка ${e['ID']}',
+      };
+    } catch (e) {
+      debugPrint('Потенциальные проекты: не удалось получить сделки ($e)');
+      return const {};
     }
   }
 

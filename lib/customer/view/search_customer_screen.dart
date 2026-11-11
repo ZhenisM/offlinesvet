@@ -135,8 +135,7 @@ Future<void> _syncActiveCartAfterCreate(CartApiService cartApiService, int manag
     if (current.isNotEmpty) {
       final newCartId = current.first.id;
       await CustomerStorage.setActiveCartId(newCartId);
-      // Если в этот момент шла запись за какую-то ДРУГУЮ (старую) корзину —
-      // останавливаем и откладываем её именно за ту, прежнюю.
+      // Идёт запись — привязываем её к корзине выбранного клиента.
       await CallRecordingService.instance.onActiveCartChanged(newCartId);
     }
   } catch (e) {
@@ -182,7 +181,7 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
     }
   }
 
-  Future<void> _select(CustomerSearchResult match) async {
+  Future<void> _select(CustomerSearchResult match, PotentialDeal? deal) async {
     setState(() { _loading = true; _error = null; });
     final customer = Customer(
       contactId: match.contactId,
@@ -191,8 +190,10 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
       name: match.name,
       lastName: match.lastName,
       phone: match.phone,
-      type: CustomerType.client,
+      type: match.type,
       selectedAt: DateTime.now(),
+      potentialDealId: deal?.id,
+      potentialDealTitle: deal?.title,
     );
     try {
       await CustomerStorage.setActive(customer);
@@ -247,7 +248,7 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
             ..._results!.map((m) => _ContactResultCard(
               result: m,
               loading: _loading,
-              onSelect: () => _select(m),
+              onSelect: (deal) => _select(m, deal),
             )),
         ],
       ]),
@@ -258,7 +259,7 @@ class _ContactSearchViewState extends State<_ContactSearchView> {
 // -------------------------------------------------------
 // Карточка результата — контакт
 // -------------------------------------------------------
-class _ContactResultCard extends StatelessWidget {
+class _ContactResultCard extends StatefulWidget {
   const _ContactResultCard({
     required this.result,
     required this.loading,
@@ -266,10 +267,21 @@ class _ContactResultCard extends StatelessWidget {
   });
   final CustomerSearchResult result;
   final bool loading;
-  final VoidCallback onSelect;
+
+  /// deal — выбранный потенциальный проект или null (без проекта).
+  final ValueChanged<PotentialDeal?> onSelect;
+
+  @override
+  State<_ContactResultCard> createState() => _ContactResultCardState();
+}
+
+class _ContactResultCardState extends State<_ContactResultCard> {
+  String? _dealId;
 
   @override
   Widget build(BuildContext context) {
+    final result = widget.result;
+    final deals = result.potentialDeals;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
@@ -281,11 +293,70 @@ class _ContactResultCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _InfoRow(label: 'Имя', value: result.fullName),
         _InfoRow(label: 'Телефон', value: result.phone),
-        _InfoRow(label: 'Тип', value: 'Клиент'),
+        _InfoRow(label: 'Тип', value: result.type.label),
+        if (deals.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text('Потенциальные проекты',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+          const SizedBox(height: 6),
+          // Как на сайте: проект выбирать не обязательно; повторное
+          // касание снимает выбор.
+          ...deals.map((d) => _ProjectOption(
+                title: d.title,
+                selected: _dealId == d.id,
+                onTap: () => setState(() => _dealId = _dealId == d.id ? null : d.id),
+              )),
+        ],
         const SizedBox(height: 4),
-        _GreenButton(label: 'Выбрать', loading: loading, onTap: onSelect),
+        _GreenButton(
+          label: 'Выбрать',
+          loading: widget.loading,
+          onTap: () {
+            PotentialDeal? deal;
+            for (final d in deals) {
+              if (d.id == _dealId) deal = d;
+            }
+            widget.onSelect(deal);
+          },
+        ),
         const SizedBox(height: 4),
       ]),
+    );
+  }
+}
+
+class _ProjectOption extends StatelessWidget {
+  const _ProjectOption({required this.title, required this.selected, required this.onTap});
+  final String title;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const green = Color(0xFF4CAF50);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? green.withValues(alpha: 0.08) : Colors.white,
+            border: Border.all(color: selected ? green : Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              size: 20,
+              color: selected ? green : Colors.grey.shade500,
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(title, style: const TextStyle(fontSize: 14))),
+          ]),
+        ),
+      ),
     );
   }
 }

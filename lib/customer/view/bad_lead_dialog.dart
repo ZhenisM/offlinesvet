@@ -4,8 +4,6 @@ import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/customer/bad_lead_queue.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
-import 'package:offlinesvet/foursell/foursell_api.dart';
-import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
 
 Future<bool?> showBadLeadDialog(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -49,10 +47,10 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
   void initState() {
     super.initState();
     // Запись стартует сама при нажатии "Некачественный лид".
-    CallRecordingService.instance.startForLeadForm().then((started) {
+    CallRecordingService.instance.startForLeadForm(badLead: true).then((started) {
       _ownsRecording = started;
       if (started && !mounted && !_submitted) {
-        CallRecordingService.instance.discard();
+        CallRecordingService.instance.stop(reason: 'lead_form_closed');
       }
     });
   }
@@ -60,7 +58,7 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
   @override
   void dispose() {
     if (_ownsRecording && !_submitted) {
-      CallRecordingService.instance.discard();
+      CallRecordingService.instance.stop(reason: 'lead_form_closed');
     }
     _titleController.dispose();
     _nameController.dispose();
@@ -81,9 +79,8 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
   /// в фоновую очередь (BadLeadQueue), а форма сразу закрывается. Это
   /// значит, что менеджер может тут же открыть следующую анкету, не
   /// дожидаясь ответа от Bitrix (особенно важно при плохом интернете).
-  /// Запись разговора (если шла) останавливается прямо здесь, мгновенно
-  /// и локально — сама отправка файла в Bitrix, привязанная именно к
-  /// ЭТОМУ лиду, произойдёт уже в фоне, когда лид будет создан.
+  /// Запись разговора (если шла) останавливается здесь; лид привязывается
+  /// к ней событием lead_created из фоновой очереди.
   Future<void> _submit() async {
     final phoneText = _phoneController.text.trim();
     if (phoneText.isNotEmpty && !KzPhoneMaskFormatter.isComplete(phoneText)) {
@@ -100,26 +97,11 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
       final title = _titleController.text.trim();
 
       _submitted = true;
-      final recording = await CallRecordingService.instance.stopForLeadForm();
-      final recordingPath = recording?.filePath;
-
-      // В 4sell лид не нужен — отправляем сразу, параллельно очереди
-      // Bitrix. Связь с лидом — через ORIGIN_ID = communicationId.
-      if (recording != null) {
-        try {
-          await FourSellUploadQueue.instance.enqueue(
-            communicationId: recording.communicationId,
-            recordingPath: recording.filePath,
-            startedAt: recording.startedAt,
-            endedAt: recording.endedAt,
-            employeeId: (await CustomerStorage.currentManagerId())?.toString(),
-            employeeName: managerName,
-            formKind: FourSellFormKind.badLead,
-          );
-        } catch (e) {
-          debugPrint('4sell enqueue: $e');
-        }
-      }
+      // Некачественный лид — разговор окончен (заказа не будет): запись
+      // останавливаем. ID сессии уходит в ORIGIN_ID лида, а сам лид —
+      // событием lead_created, когда очередь его создаст.
+      final sessionId = CallRecordingService.instance.currentCommunicationId;
+      await CallRecordingService.instance.stop(reason: 'bad_lead');
 
       await BadLeadQueue.instance.enqueue(PendingBadLeadJob(
         id: '${DateTime.now().microsecondsSinceEpoch}',
@@ -133,8 +115,8 @@ class _BadLeadSheetState extends State<BadLeadSheet> {
         failReasons: _failReasons.toList(),
         managerName: managerName,
         managerEmail: await CustomerStorage.currentManagerEmail(),
-        recordingPath: recordingPath,
-        communicationId: recording?.communicationId,
+        recordingPath: null,
+        communicationId: sessionId,
         clientName: _nameController.text.trim().isEmpty ? null : _nameController.text.trim(),
         clientPhone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
         createdAt: DateTime.now(),

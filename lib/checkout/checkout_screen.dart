@@ -11,11 +11,13 @@ import 'package:offlinesvet/cart/cart_api_service_offline.dart';
 import 'package:offlinesvet/common/animated_search_bar.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
+import 'package:offlinesvet/customer/models/customer_model.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/checkout/order_data_service.dart';
 import 'package:offlinesvet/sync/offline_queue.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/common/call_recorder_button.dart';
 
 // -------------------------------------------------------
 // Модель купона (список купонов, только визуал)
@@ -103,6 +105,7 @@ const _pNamePhys      = 23;
 const _pPhonePhys     = 24;
 const _pClientType    = 32;
 const _pProject       = 214;
+const _pProjectDealId = 261; // ID потенциального проекта (сделка Битрикс24), физ. лицо
 const _pCategory      = 219;
 const _pStatus        = 143;
 const _pPlace         = 124;
@@ -173,6 +176,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final _nameCtrl          = TextEditingController(); // ФИО контакта (физ) / ФИО контактного лица (юр)
   final _phoneCtrl         = TextEditingController(); // Телефон контакта (физ) / Телефон компании (юр)
   final _projectCtrl       = TextEditingController();
+  /// Сделка-проект, выбранная при поиске клиента (POTENTIAL_DEAL корзины).
+  PotentialDeal? _potentialDeal;
   final _areaCtrl          = TextEditingController();
   final _companyCtrl       = TextEditingController(); // Наименование компании (юр)
   final _companyFullCtrl   = TextEditingController(); // Полное наименование компании (юр)
@@ -274,6 +279,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           final phone = client['PHONE']?.toString() ?? '';
           if (name.isNotEmpty)  _nameCtrl.text  = name;
           if (phone.isNotEmpty) _phoneCtrl.text = _formatPhone(phone);
+
+          // Тип клиента — как на сайте, из данных клиента корзины:
+          // приложение пишет TYPE_ID 589/591, сайт — TYPE с названием типа.
+          final typeId = client['TYPE_ID']?.toString() ?? '';
+          final typeName = client['TYPE']?.toString().toLowerCase() ?? '';
+          if (typeId == CustomerType.designer.bitrixFieldId || typeName.contains('дизайнер')) {
+            _clientType = 'Дизайнер';
+          } else if (typeId == CustomerType.client.bitrixFieldId || typeName.contains('клиент')) {
+            _clientType = 'Клиент';
+          }
+
+          // Выбран потенциальный проект — название в «Название
+          // проекта/объекта» (214), ID сделки — в свойство 261.
+          _potentialDeal = Customer.potentialDealOf(client);
+          final dealTitle = _potentialDeal?.title ?? '';
+          if (dealTitle.isNotEmpty && _projectCtrl.text.isEmpty) {
+            _projectCtrl.text = dealTitle;
+          }
         }
       }
     }
@@ -621,29 +644,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // -------------------------------------------------------
   // Отправка заказа
   // -------------------------------------------------------
-  Future<void> _toggleCartRecording() async {
-    final service = CallRecordingService.instance;
-    if (service.isRecording.value) {
-      await service.stopRecordingForCart();
-      return;
-    }
-    if (!await service.hasPermission()) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Нужно разрешение на использование микрофона')),
-      );
-      return;
-    }
-    await service.startForCart(_cart.id);
-  }
+  Future<void> _toggleCartRecording() =>
+      RecordingControls.toggle(context, trigger: 'checkout', cartId: _cart.id);
 
-  /// Ищет сделку по номеру заказа и прикрепляет к ней отложенную запись —
-  /// с несколькими попытками, потому что сделка создаётся отдельной
-  /// автоматизацией Bitrix (бизнес-процесс из нескольких шагов) не сразу
-  /// вместе с заказом — на практике задержка доходила до 6-7 МИНУТ.
-  /// Выполняется в фоне (не awaited в месте вызова) — не задерживает
-  /// переход на экран успеха заказа.
-  Future<void> _attachRecordingToDealWithRetries(String cartId, String orderId) async {
+  /// Сделка создаётся автоматизацией Bitrix не сразу (до 6–7 минут) —
+  /// ищем её по номеру заказа в фоне и сообщаем в сессию записи
+  /// (deal_found), чтобы запись и анализ легли в нужную сделку.
+  Future<void> _reportDealForRecording(String sessionId, String orderId) async {
     const maxAttempts = 20;
     const delayBetween = Duration(seconds: 30); // итого до ~10 минут ожидания
 
@@ -651,17 +658,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       try {
         final dealId = await _bitrixService.findDealByOrderNumber(orderId);
         if (dealId != null) {
-          await CallRecordingService.instance.attachPendingRecordingForCart(cartId, dealId);
-          debugPrint('Запись успешно прикреплена к сделке $dealId (заказ $orderId)');
+          await CallRecordingService.instance.onDealFound(
+            sessionId: sessionId, orderId: orderId, dealId: dealId);
+          debugPrint('Запись $sessionId: сделка $dealId (заказ $orderId)');
           return;
         }
         debugPrint('Сделка по номеру заказа $orderId ещё не найдена (попытка $attempt/$maxAttempts)');
       } catch (e) {
-        debugPrint('Ошибка поиска/прикрепления сделки, попытка $attempt/$maxAttempts: $e');
+        debugPrint('Ошибка поиска сделки, попытка $attempt/$maxAttempts: $e');
       }
       if (attempt < maxAttempts) await Future.delayed(delayBetween);
     }
-    debugPrint('Не удалось прикрепить запись к сделке заказа $orderId после $maxAttempts попыток');
+    debugPrint('Сделка для заказа $orderId не найдена за $maxAttempts попыток');
   }
 
   Future<void> _submit() async {
@@ -676,19 +684,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     setState(() { _loading = true; _error = null; });
 
-    // Останавливаем запись СРАЗУ по нажатию "Оформить", не дожидаясь
-    // ответа сервера — раньше это происходило только после успешного
-    // create_order.php, а сам запрос может думать несколько минут, из-за
-    // чего на практике казалось, что кнопка микрофона вообще не реагирует.
-    // Прикрепление к сделке всё равно происходит позже (см. ниже,
-    // hasPendingRecordingForCart + _attachRecordingToDealWithRetries) —
-    // ранняя остановка этому не мешает, просто сама индикация в
-    // интерфейсе теперь мгновенная.
-    // ВРЕМЕННО: диагностика — почему проверка может не срабатывать
-
-    if (CallRecordingService.instance.isRecording.value) {
-      await CallRecordingService.instance.stopRecordingForCart();
-    }
+    // Запись разговора НЕ останавливаем по нажатию «Оформить»: если
+    // заказ не создастся, разговор продолжается. Остановка — после
+    // успешного create_order.php (или постановки в офлайн-очередь).
 
     try {
       final managerId = await CustomerStorage.currentManagerId();
@@ -741,6 +739,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         '$_pH1cBaseFiz'  : _h1cBase1c,
         '$_pClientType': _clientType,
         '$_pProject'   : _projectCtrl.text.trim(),
+        if (_potentialDeal != null) '$_pProjectDealId': _potentialDeal!.id,
         '$_pCategory'  : _categories,
         '$_pStatus'    : _orderStatus,
         '$_pPlace'     : _servicePlace,
@@ -776,23 +775,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         // автоматически, как только появится интернет (см. sync_service.dart).
         await OfflineQueue.enqueue(QueueActionType.createOrder, payload);
 
-        // Если запись всё ещё идёт за эту корзину — останавливаем и
-        // откладываем её, чтобы не оставалась висеть активной после
-        // ухода с экрана.
-        //
-        // ИЗВЕСТНОЕ ОГРАНИЧЕНИЕ: реальное прикрепление к сделке для
-        // ЭТОГО заказа сейчас НЕ произойдёт автоматически — сам заказ
-        // будет создан позже отдельным путём, через SyncService, когда
-        // появится интернет (см. sync_service.dart), а логика поиска
-        // сделки и прикрепления записи (_attachRecordingToDealWithRetries)
-        // сейчас есть только здесь, в online-сценарии оформления. Если
-        // нужно, чтобы это работало и для заказов, оформленных офлайн —
-        // потребуется отдельно перенести эту же логику в sync_service.dart,
-        // в место, где он обрабатывает успешный ответ create_order.php
-        // из очереди.
-        //
-        // Сам останов записи уже произошёл в начале _submit() — здесь
-        // повторно делать этого не нужно.
+        // Нет интернета: номер заказа появится позже (SyncService).
+        // Запись закрываем с привязкой к корзине — order_queued.
+        await CallRecordingService.instance.onOrderQueued(cartId: _cart.id);
 
         // Помечаем корзину как оформленную локально — тем же путём, что
         // уже используется для остальных офлайн-изменений статуса корзины
@@ -840,18 +825,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (result['success'] == true) {
         final orderId = result['order_id'];
 
-        // Запись за эту корзину (если шла) уже остановлена и отложена в
-        // самом начале _submit() — здесь просто ищем сделку по номеру
-        // заказа и прикрепляем к ней.
-
-        // Если для этой корзины есть отложенная запись разговора —
-        // пытаемся прикрепить её к сделке В ФОНЕ, не задерживая переход
-        // на экран успеха. Сделка в Bitrix создаётся отдельной
-        // автоматизацией (бизнес-процесс/робот) не мгновенно вместе с
-        // заказом, а с небольшой задержкой — поэтому пробуем несколько
-        // раз с паузой, а не один раз сразу.
-        if (await CallRecordingService.instance.hasPendingRecordingForCart(_cart.id)) {
-          _attachRecordingToDealWithRetries(_cart.id, orderId.toString());
+        // Заказ создан — событие order_created в сессию записи и остановка.
+        // Сделку ищем в фоне, не задерживая экран успеха.
+        final recSession = await CallRecordingService.instance.onOrderCreated(
+          cartId: _cart.id, orderId: orderId.toString());
+        if (recSession != null) {
+          _reportDealForRecording(recSession, orderId.toString());
         }
 
         if (!mounted) return;
@@ -867,9 +846,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     } catch (e) {
       setState(() => _error = e.toString());
-      // Запись (если шла) уже остановлена и отложена в самом начале
-      // _submit() — при повторной попытке оформления этой же корзины
-      // отложенная запись всё ещё найдётся через hasPendingRecordingForCart.
+      // Заказ не создан — запись (если шла) продолжается.
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1296,7 +1273,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           onChanged: (i) => setState(() => _clientType = _clientTypes[i])), const SizedBox(height: 16),
       ],
       _FieldLabel(label: 'Название проекта/объекта', required: true), const SizedBox(height: 6),
-      _buildTextField(_projectCtrl), const SizedBox(height: 16),
+      _buildTextField(_projectCtrl),
+      if (!_isLegal && _potentialDeal != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(children: [
+            const Icon(Icons.link, size: 16, color: Color(0xFF4CAF50)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('Проект из Битрикс24, сделка №${_potentialDeal!.id}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+            ),
+            TextButton(
+              onPressed: () => setState(() => _potentialDeal = null),
+              child: const Text('Отвязать', style: TextStyle(fontSize: 12)),
+            ),
+          ]),
+        ),
+      const SizedBox(height: 16),
       _FieldLabel(label: 'Категории товаров', required: true), const SizedBox(height: 6),
       _buildCheckboxGrid(items: _catList, selected: _categories,
         onToggle: (v) => setState(() => _categories.contains(v) ? _categories.remove(v) : _categories.add(v))),

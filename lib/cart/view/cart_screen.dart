@@ -181,13 +181,14 @@ class _CartScreenState extends State<CartScreen> {
     // повторного входа). Делаем её клиента текущим без лишнего запроса.
     if (cart.isCurrent) {
       await CustomerStorage.setActiveCartId(cart.id);
-      await CallRecordingService.instance.onActiveCartChanged(cart.id);
       if (cart.clientInfo != null) {
         await CustomerStorage.setActive(Customer.fromMultibasketsClientInfo(
           cart.clientInfo!,
           selectedAt: DateTime.now(),
         ));
       }
+      // После setActive — чтобы в событие записи ушёл клиент этой корзины.
+      await CallRecordingService.instance.onActiveCartChanged(cart.id);
       if (mounted) setState(() {});
       return;
     }
@@ -206,7 +207,6 @@ class _CartScreenState extends State<CartScreen> {
       // не только здесь) и, если в этот момент шла запись за ДРУГУЮ
       // корзину — останавливаем и откладываем её именно за ту, прежнюю.
       await CustomerStorage.setActiveCartId(cart.id);
-      await CallRecordingService.instance.onActiveCartChanged(cart.id);
 
       if (cart.clientInfo != null) {
         final customer = Customer.fromMultibasketsClientInfo(
@@ -215,6 +215,9 @@ class _CartScreenState extends State<CartScreen> {
         );
         await CustomerStorage.setActive(customer);
       }
+      // Идёт запись — фиксируем смену корзины (запись не останавливается,
+      // менеджер останавливает её сам в нижнем меню).
+      await CallRecordingService.instance.onActiveCartChanged(cart.id);
       await _loadCarts();
     } catch (e) {
       setState(() => _error = 'Не удалось переключить корзину');

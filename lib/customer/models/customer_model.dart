@@ -50,6 +50,12 @@ class Customer {
   final CustomerType type;
   final DateTime selectedAt;
 
+  /// Выбранный «потенциальный проект» — сделка Битрикс24 из поля контакта
+  /// UF_CRM_1782219134. Как на сайте: POTENTIAL_DEAL {ID, TITLE} в данных
+  /// клиента корзины, при оформлении — свойства заказа 214 и 261.
+  final String? potentialDealId;
+  final String? potentialDealTitle;
+
   const Customer({
     this.contactId,
     this.companyId,
@@ -62,6 +68,8 @@ class Customer {
     this.bin = '',
     required this.type,
     required this.selectedAt,
+    this.potentialDealId,
+    this.potentialDealTitle,
   });
 
   String get fullName =>
@@ -97,6 +105,9 @@ class Customer {
       'NAME': fullName,
       'PHONE': phone,
       'COMPANY_BIN': null,
+      // Тот же формат, что пишет сайт (SvetApp\Client\Contact::setCurrent).
+      if (potentialDealId != null && potentialDealId!.isNotEmpty)
+        'POTENTIAL_DEAL': {'ID': potentialDealId, 'TITLE': potentialDealTitle ?? ''},
     };
   }
 
@@ -131,6 +142,7 @@ class Customer {
         ? CustomerType.designer
         : CustomerType.client;
 
+    final deal = potentialDealOf(clientInfo);
     return Customer(
       contactId: clientInfo['ID']?.toString(),
       isCompany: false,
@@ -138,7 +150,29 @@ class Customer {
       phone: clientInfo['PHONE']?.toString() ?? '',
       type: type,
       selectedAt: selectedAt,
+      potentialDealId: deal?.id,
+      potentialDealTitle: deal?.title,
     );
+  }
+
+  /// Проект из данных клиента корзины. Сайт пишет вложенный объект
+  /// POTENTIAL_DEAL {ID, TITLE}; на всякий случай понимаем и плоские
+  /// POTENTIAL_DEAL_ID / POTENTIAL_DEAL_TITLE. null — проект не выбран.
+  static PotentialDeal? potentialDealOf(Map<String, dynamic>? clientInfo) {
+    if (clientInfo == null) return null;
+    String id = '';
+    String title = '';
+    final nested = clientInfo['POTENTIAL_DEAL'];
+    if (nested is Map) {
+      id = nested['ID']?.toString() ?? '';
+      title = nested['TITLE']?.toString() ?? '';
+    }
+    if (id.isEmpty) {
+      id = clientInfo['POTENTIAL_DEAL_ID']?.toString() ?? '';
+      title = clientInfo['POTENTIAL_DEAL_TITLE']?.toString() ?? title;
+    }
+    if (id.isEmpty || id == 'null') return null;
+    return PotentialDeal(id: id, title: title);
   }
 
   Customer copyWith({
@@ -153,6 +187,8 @@ class Customer {
     String? bin,
     CustomerType? type,
     DateTime? selectedAt,
+    String? potentialDealId,
+    String? potentialDealTitle,
   }) {
     return Customer(
       contactId: contactId ?? this.contactId,
@@ -166,6 +202,8 @@ class Customer {
       bin: bin ?? this.bin,
       type: type ?? this.type,
       selectedAt: selectedAt ?? this.selectedAt,
+      potentialDealId: potentialDealId ?? this.potentialDealId,
+      potentialDealTitle: potentialDealTitle ?? this.potentialDealTitle,
     );
   }
 
@@ -181,6 +219,8 @@ class Customer {
         'bin': bin,
         'type': type.name,
         'selectedAt': selectedAt.toIso8601String(),
+        'potentialDealId': potentialDealId,
+        'potentialDealTitle': potentialDealTitle,
       };
 
   factory Customer.fromJson(Map<String, dynamic> json) {
@@ -200,8 +240,18 @@ class Customer {
       ),
       selectedAt: DateTime.tryParse(json['selectedAt']?.toString() ?? '') ??
           DateTime.now(),
+      potentialDealId: json['potentialDealId']?.toString(),
+      potentialDealTitle: json['potentialDealTitle']?.toString(),
     );
   }
+}
+
+/// Потенциальный проект контакта — сделка Битрикс24 (ID + заголовок,
+/// например «ЖК Эстет - 70м²»).
+class PotentialDeal {
+  final String id;
+  final String title;
+  const PotentialDeal({required this.id, required this.title});
 }
 
 /// Результат поиска контакта в Bitrix (короткая карточка для списка выбора).
@@ -210,12 +260,18 @@ class CustomerSearchResult {
   final String name;
   final String lastName;
   final String phone;
+  final CustomerType type;
+
+  /// Потенциальные проекты из поля контакта UF_CRM_1782219134.
+  final List<PotentialDeal> potentialDeals;
 
   const CustomerSearchResult({
     required this.contactId,
     required this.name,
     this.lastName = '',
     required this.phone,
+    this.type = CustomerType.client,
+    this.potentialDeals = const [],
   });
 
   String get fullName => lastName.isEmpty ? name : '$name $lastName'.trim();

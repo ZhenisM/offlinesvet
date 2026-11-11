@@ -5,7 +5,6 @@ import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/cart/cart.dart';
 import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
-import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
 import 'package:offlinesvet/customer/lead_form/lead_form_model.dart';
 import 'package:offlinesvet/customer/lead_form/lead_form_section.dart';
 
@@ -48,28 +47,30 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
 
   /// true — запись начала именно эта анкета (автостарт при открытии).
   bool _ownsRecording = false;
-  /// true — запись передана дальше (лид создан или выбран существующий
-  /// клиент), при закрытии шторки её не трогаем.
+  /// true — разговор продолжается (лид создан или выбран существующий
+  /// клиент): при закрытии шторки запись не останавливаем.
   bool _recordingHandedOff = false;
 
   @override
   void initState() {
     super.initState();
-    // Запись разговора стартует сама при нажатии "Анкета лида".
+    // Запись разговора стартует сама при открытии «Анкеты лида»
+    // (если её ещё не включили кнопкой «Записать разговор»).
     CallRecordingService.instance.startForLeadForm().then((started) {
       _ownsRecording = started;
       // Шторку могли закрыть раньше, чем стартовал микрофон.
       if (started && !mounted && !_recordingHandedOff) {
-        CallRecordingService.instance.discard();
+        CallRecordingService.instance.stop(reason: 'lead_form_closed');
       }
     });
   }
 
   @override
   void dispose() {
-    // Закрыли анкету, не отправив — лида нет, запись не нужна.
+    // Закрыли анкету, не отправив, а запись запустила сама анкета —
+    // разговора не было, останавливаем. Начатую кнопкой — не трогаем.
     if (_ownsRecording && !_recordingHandedOff) {
-      CallRecordingService.instance.discard();
+      CallRecordingService.instance.stop(reason: 'lead_form_closed');
     }
     _nameController.dispose();
     _phoneController.dispose();
@@ -133,47 +134,16 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
       );
       _recordingHandedOff = true;
 
-      // Останавливаем запись мгновенно (локально) и отдаём в фоновую
-      // очередь 4sell — она сама скопирует файл и отправит, не блокируя
-      // анкету. Bitrix-вложение ниже — как и раньше.
-      final recording = await CallRecordingService.instance.stopForLeadForm();
-      if (recording != null) {
-        try {
-          await FourSellUploadQueue.instance.enqueue(
-            communicationId: recording.communicationId,
-            recordingPath: recording.filePath,
-            startedAt: recording.startedAt,
-            endedAt: recording.endedAt,
-            employeeId: (await CustomerStorage.currentManagerId())?.toString(),
-            employeeName: managerName,
-            leadId: leadId,
-          );
-        } catch (e) {
-          debugPrint('4sell enqueue: $e');
-        }
-      }
-
-      // Если в этот момент шла запись разговора (кнопка "Записать
-      // разговор" на главном экране) — останавливаем её и сразу
-      // прикрепляем к только что созданному лиду. Если записи не было —
-      // метод ничего не делает (см. CallRecordingService).
-      // Ошибку отправки записи не считаем ошибкой создания лида: сам
-      // лид уже создан и должен сохраниться в любом случае — менеджера
-      // только предупреждаем отдельно, что запись не прикрепилась.
-      // Вложение в Bitrix — в фоне: WAV весит ≈5,8 МБ/мин, ждать его
-      // загрузку на экране анкеты при плохом интернете нельзя.
-      if (recording != null) {
-        final messenger = mounted ? ScaffoldMessenger.maybeOf(context) : null;
-        unawaited(CallRecordingService.instance
-            .attachRecordingFileToLead(recording.filePath, leadId)
-            .catchError((Object e) {
-          debugPrint('Bitrix attach: $e');
-          messenger?.showSnackBar(
-            const SnackBar(content: Text(
-              'Лид создан, но запись не прикрепилась в Bitrix (в 4sell она уйдёт).',
-            )),
-          );
-        }));
+      // Запись НЕ останавливается: лид уходит событием в ту же сессию
+      // (ORIGIN_ID лида = ID сессии), разговор пишется дальше — до
+      // оформления заказа или остановки в нижнем меню. В Битрикс24 запись
+      // мы больше не кладём — это делает 4sell.
+      if (communicationId != null) {
+        unawaited(CallRecordingService.instance.onLeadCreated(
+          leadId: leadId,
+          contactId: contactId,
+          sessionId: communicationId,
+        ));
       }
 
       final customer = Customer(
@@ -194,8 +164,8 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   }
 
   Future<void> _selectExisting(CustomerSearchResult match) async {
-    // Разговор с существующим клиентом продолжается — запись не
-    // выбрасываем, она живёт дальше как обычная (кнопка "Записать").
+    // Разговор с существующим клиентом продолжается — запись идёт дальше,
+    // в сессию уходит client_selected.
     _recordingHandedOff = true;
     setState(() { _loading = true; _error = null; });
     final customer = Customer(
@@ -208,6 +178,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
       type: _type,
       selectedAt: DateTime.now(),
     );
+    unawaited(CallRecordingService.instance.onClientSelected(customer));
     try {
       await _finalizeCustomerSelection(customer);
     } on NoInternetException {
@@ -236,8 +207,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
         if (current.isNotEmpty) {
           final newCartId = current.first.id;
           await CustomerStorage.setActiveCartId(newCartId);
-          // Если в этот момент шла запись за какую-то ДРУГУЮ (старую)
-          // корзину — останавливаем и откладываем её именно за ту, прежнюю.
+          // Идёт запись — привязываем её к корзине нового клиента.
           await CallRecordingService.instance.onActiveCartChanged(newCartId);
         }
       } catch (e) {

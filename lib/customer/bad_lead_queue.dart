@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
@@ -191,17 +192,19 @@ class BadLeadQueue {
         contactId: contactId,
       );
 
+      // Привязка лида к записи разговора (сессия уже остановлена).
+      if (job.communicationId != null) {
+        await CallRecordingService.instance.onLeadCreated(
+          leadId: leadId,
+          contactId: contactId,
+          kind: 'bad_lead',
+          sessionId: job.communicationId,
+        );
+      }
+      // Задачи старого формата (до непрерывной записи) — файл больше
+      // никуда не прикладываем, просто убираем с устройства.
       if (job.recordingPath != null) {
-        try {
-          await CallRecordingService.instance.attachRecordingFileToLead(job.recordingPath!, leadId);
-        } catch (e) {
-          // Лид уже создан — терять его из-за записи нельзя. Запись
-          // просто останется недоставленной (файл не удалится сам собой,
-          // раз attachRecordingFileToLead не дошёл до конца), но
-          // повторно эту же задачу мы уже считаем выполненной, чтобы не
-          // плодить дубликаты лида при каждом повторе.
-          debugPrint('BadLeadQueue: лид $leadId создан, но запись не прикрепилась ($e)');
-        }
+        try { await File(job.recordingPath!).delete(); } catch (_) {}
       }
 
       _queue.removeAt(0);

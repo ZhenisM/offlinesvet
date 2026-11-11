@@ -3,7 +3,7 @@ import 'package:offlinesvet/cart/cart_local_store.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:offlinesvet/sync/sync_status_notifier.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
-import 'package:offlinesvet/customer/customer_storage.dart';
+import 'package:offlinesvet/common/call_recorder_button.dart';
 
 enum AppBottomTab { profile, scanner, mic, catalog, cart }
 
@@ -42,40 +42,10 @@ class AppBottomNavBar extends StatelessWidget {
   void _goToCatalog(BuildContext context) => _goTo(context, AppBottomTab.catalog);
   void _goToCart(BuildContext context) => _goTo(context, AppBottomTab.cart);
 
-  /// Поведение кнопки микрофона по умолчанию — используется на всех
-  /// экранах, которые не передали свой onMicTap явно (checkout_screen.dart
-  /// передаёт свой, т.к. там корзина известна точно и сразу; здесь же
-  /// берём её из CustomerStorage — глобально сохранённая "активная
-  /// корзина", актуальная на любом экране с этой нижней панелью).
-  Future<void> _defaultMicTap(BuildContext context) async {
-    final service = CallRecordingService.instance;
-
-    if (service.isRecording.value) {
-      await service.stopRecordingForCart();
-      return;
-    }
-
-    final cartId = await CustomerStorage.getActiveCartId();
-    if (cartId == null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нет активной корзины — сначала выберите или создайте клиента')),
-        );
-      }
-      return;
-    }
-
-    if (!await service.hasPermission()) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Нужно разрешение на использование микрофона')),
-        );
-      }
-      return;
-    }
-
-    await service.startForCart(cartId);
-  }
+  /// Микрофон по умолчанию: старт записи для текущей корзины или
+  /// остановка (с подтверждением). Экран оформления передаёт свой onMicTap.
+  Future<void> _defaultMicTap(BuildContext context) =>
+      RecordingControls.toggleForActiveCart(context);
 
   @override
   Widget build(BuildContext context) {
@@ -113,9 +83,8 @@ class AppBottomNavBar extends StatelessWidget {
                 selected: currentTab == AppBottomTab.scanner,
                 onTap: () => _goTo(context, AppBottomTab.scanner),
               ),
-              // 3. Микрофон — центральная кнопка, старт/стоп записи разговора
-              // за текущую корзину (какая корзина активна — решает экран,
-              // который передаёт onMicTap; сам виджет этого не знает).
+              // 3. Микрофон — старт записи для текущей корзины / остановка
+              // записи (в том числе начатой кнопкой на главном или анкетой).
               ValueListenableBuilder<bool>(
                 valueListenable: CallRecordingService.instance.isRecording,
                 builder: (context, isRecording, _) => GestureDetector(

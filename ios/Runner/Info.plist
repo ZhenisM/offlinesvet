@@ -53,5 +53,9 @@
 	<string>Используется для поиска товара по фото из галереи</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Используется для записи разговора с клиентом</string>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+    </array>
 </dict>
 </plist>
