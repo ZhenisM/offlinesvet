@@ -7,6 +7,7 @@ import 'package:offlinesvet/cart/cart_api_service.dart';
 import 'package:offlinesvet/cart/cart_api_service_offline.dart';
 import 'package:offlinesvet/cart/models/cart_model.dart';
 import 'package:offlinesvet/customer/customer_storage.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
 import 'package:offlinesvet/repositories/products/models/product.dart';
 
 /// Список помещений для SELECT_ROOM.
@@ -190,6 +191,12 @@ class _AddToCartSheetState extends State<_AddToCartSheet> {
       );
 
       debugPrint('ADD TO CART: успешно добавлен товар ${widget.product.id} в корзину ${currentCart.id}');
+      CallRecordingService.instance.onProductAdded(
+        cartId: currentCart.id,
+        productId: widget.product.id,
+        productName: widget.product.name,
+        quantity: _quantity,
+      );
       debugPrint('ADD TO CART: productsInfo = ${encodeCartItems(updatedItems)}');
 
       if (!mounted) return;

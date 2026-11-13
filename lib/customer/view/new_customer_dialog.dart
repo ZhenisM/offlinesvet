@@ -7,6 +7,7 @@ import 'package:offlinesvet/customer/customer.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
 import 'package:offlinesvet/customer/lead_form/lead_form_model.dart';
 import 'package:offlinesvet/customer/lead_form/lead_form_section.dart';
+import 'package:offlinesvet/recording/lead_form_recording_bridge.dart';
 
 Future<bool?> showNewCustomerDialog(BuildContext context) {
   return showModalBottomSheet<bool>(
@@ -35,6 +36,17 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
   /// Полная анкета (как CRM-форма №81 на сайте).
   final _extra = LeadFormData();
 
+  /// Изменения полей и этап анкеты → в запись разговора (для 4sell).
+  late final LeadFormRecordingBridge _recBridge = LeadFormRecordingBridge(
+    data: _extra,
+    extraFields: () => {
+      'NAME': _nameController.text,
+      'PHONE': _phoneController.text,
+      'TYPE_ID': _type == CustomerType.designer ? '1' : 'CLIENT',
+      'COMMENTS': _commentController.text,
+    },
+  );
+
   final _bitrixService  = BitrixService(dio: Dio());
   final _cartApiService = CartApiService(dio: Dio());
 
@@ -58,6 +70,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
     // (если её ещё не включили кнопкой «Записать разговор»).
     CallRecordingService.instance.startForLeadForm().then((started) {
       _ownsRecording = started;
+      if (mounted) _recBridge.start();
       // Шторку могли закрыть раньше, чем стартовал микрофон.
       if (started && !mounted && !_recordingHandedOff) {
         CallRecordingService.instance.stop(reason: 'lead_form_closed');
@@ -67,6 +80,7 @@ class _NewCustomerSheetState extends State<NewCustomerSheet> {
 
   @override
   void dispose() {
+    _recBridge.dispose();
     // Закрыли анкету, не отправив, а запись запустила сама анкета —
     // разговора не было, останавливаем. Начатую кнопкой — не трогаем.
     if (_ownsRecording && !_recordingHandedOff) {

@@ -14,6 +14,7 @@ import 'package:offlinesvet/repositories/products/models/product.dart';
 import 'package:offlinesvet/repositories/products/products.dart';
 import 'package:offlinesvet/checkout/checkout_screen.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/recording/recording_stage_aware.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -22,7 +23,11 @@ class CartScreen extends StatefulWidget {
   State<CartScreen> createState() => _CartScreenState();
 }
 
-class _CartScreenState extends State<CartScreen> {
+class _CartScreenState extends State<CartScreen>
+    with RecordingStageAware<CartScreen> {
+  @override
+  String get recordingStage => CallRecordingService.stageCart;
+
   final _cartApiService = CartApiServiceOffline(dio: Dio());
   final _productsRepository = ProductsRepository(dio: Dio());
 

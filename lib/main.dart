@@ -9,6 +9,7 @@ import 'package:offlinesvet/foursell/foursell_upload_queue.dart';
 import 'package:offlinesvet/cart/cart_local_store.dart';
 import 'package:offlinesvet/recording/recording_upload_queue.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/recording/recording_stage_aware.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,5 +43,7 @@ void main() async {
     theme: darkTheme,
     initialRoute: '/',
     routes: routes,
+    // Этап консультации при возврате на экран кнопкой «Назад».
+    navigatorObservers: [recordingRouteObserver],
   ));
 }

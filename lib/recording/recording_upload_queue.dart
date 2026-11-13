@@ -17,6 +17,9 @@ class RecordingJob {
   final int? seq;
   final int? durationMs;
   final String? filePath;
+  final String? fragmentId; // уникальный ID куска (UUID)
+  final String? cartId; // корзина, к которой относится кусок
+  final String? stage; // этап консультации на момент окончания куска
   // event
   final String? type;
   final Map<String, dynamic>? data;
@@ -34,6 +37,9 @@ class RecordingJob {
     this.seq,
     this.durationMs,
     this.filePath,
+    this.fragmentId,
+    this.cartId,
+    this.stage,
     this.type,
     this.data,
     this.attempts = 0,
@@ -50,6 +56,9 @@ class RecordingJob {
         'seq': seq,
         'durationMs': durationMs,
         'filePath': filePath,
+        'fragmentId': fragmentId,
+        'cartId': cartId,
+        'stage': stage,
         'type': type,
         'data': data,
         'attempts': attempts,
@@ -66,6 +75,9 @@ class RecordingJob {
         seq: j['seq'] as int?,
         durationMs: j['durationMs'] as int?,
         filePath: j['filePath'] as String?,
+        fragmentId: j['fragmentId'] as String?,
+        cartId: j['cartId'] as String?,
+        stage: j['stage'] as String?,
         type: j['type'] as String?,
         data: (j['data'] as Map?)?.cast<String, dynamic>(),
         attempts: j['attempts'] as int? ?? 0,
@@ -202,6 +214,9 @@ class RecordingUploadQueue {
           startedAt: job.at,
           durationMs: job.durationMs ?? 0,
           filePath: path,
+          fragmentId: job.fragmentId ?? job.id,
+          cartId: job.cartId,
+          stage: job.stage,
         );
         try { await File(path).delete(); } catch (_) {}
       } else {

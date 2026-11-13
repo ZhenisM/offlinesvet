@@ -32,14 +32,21 @@ class RecordingApi {
     required DateTime startedAt,
     required int durationMs,
     required String filePath,
+    required String fragmentId,
+    String? cartId,
+    String? stage,
   }) {
     return _post(FormData.fromMap({
       'token': token,
       'action': 'chunk',
       'session_id': sessionId,
+      'fragment_id': fragmentId,
       'seq': seq,
       'started_at': _ts(startedAt),
+      'ended_at': _ts(startedAt.add(Duration(milliseconds: durationMs))),
       'duration_ms': durationMs,
+      if (cartId != null) 'cart_id': cartId,
+      if (stage != null) 'stage': stage,
       'audio': MultipartFile.fromFileSync(
         filePath,
         filename: '${sessionId}_$seq.wav',

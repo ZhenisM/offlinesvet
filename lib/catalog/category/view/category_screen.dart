@@ -15,6 +15,8 @@ import 'package:offlinesvet/catalog/favorites/favorites_screen.dart';
 import 'package:offlinesvet/catalog/compare/compare_screen.dart';
 import 'package:offlinesvet/catalog/widgets/category_thumbnail.dart';
 import 'package:offlinesvet/common/catalog_grid.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/recording/recording_stage_aware.dart';
 
 class CategoryScreen extends StatefulWidget {
   final Section section;
@@ -32,7 +34,11 @@ class CategoryScreen extends StatefulWidget {
   State<CategoryScreen> createState() => _CategoryScreenState();
 }
 
-class _CategoryScreenState extends State<CategoryScreen> {
+class _CategoryScreenState extends State<CategoryScreen>
+    with RecordingStageAware<CategoryScreen> {
+  @override
+  String get recordingStage => CallRecordingService.stageCatalog;
+
   final _repository = ProductsRepository(dio: Dio());
   final _scrollController = ScrollController();
 
@@ -58,6 +64,11 @@ class _CategoryScreenState extends State<CategoryScreen> {
   @override
   void initState() {
     super.initState();
+    // Запись разговора: открыт раздел каталога (подсказки 3.1–3.5 у 4sell).
+    CallRecordingService.instance.onCatalogSectionOpened(
+      sectionId: widget.section.id,
+      sectionName: widget.section.name,
+    );
     _loadProducts();
     _loadFilters();
     _scrollController.addListener(_onScroll);

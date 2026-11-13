@@ -7,6 +7,8 @@ import 'package:offlinesvet/catalog/category/view/category_screen.dart';
 import 'package:offlinesvet/common/menu/menu_screen.dart';
 import 'package:offlinesvet/common/bottom_nav/app_bottom_nav_bar.dart';
 import 'package:offlinesvet/common/animated_search_bar.dart';
+import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/recording/recording_stage_aware.dart';
 
 class ProductListScreen extends StatefulWidget {
   const ProductListScreen({super.key});
@@ -15,7 +17,11 @@ class ProductListScreen extends StatefulWidget {
   State<ProductListScreen> createState() => _ProductListScreenState();
 }
 
-class _ProductListScreenState extends State<ProductListScreen> {
+class _ProductListScreenState extends State<ProductListScreen>
+    with RecordingStageAware<ProductListScreen> {
+  @override
+  String get recordingStage => CallRecordingService.stageCatalog;
+
   List<Section>? _sectionsList;
   String? _error;
 

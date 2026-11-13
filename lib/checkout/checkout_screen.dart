@@ -17,6 +17,7 @@ import 'package:offlinesvet/checkout/order_data_service.dart';
 import 'package:offlinesvet/sync/offline_queue.dart';
 import 'package:offlinesvet/bitrix/bitrix_service.dart';
 import 'package:offlinesvet/common/call_recording_service.dart';
+import 'package:offlinesvet/recording/recording_stage_aware.dart';
 import 'package:offlinesvet/common/call_recorder_button.dart';
 
 // -------------------------------------------------------
@@ -155,7 +156,11 @@ class CheckoutScreen extends StatefulWidget {
   State<CheckoutScreen> createState() => _CheckoutScreenState();
 }
 
-class _CheckoutScreenState extends State<CheckoutScreen> {
+class _CheckoutScreenState extends State<CheckoutScreen>
+    with RecordingStageAware<CheckoutScreen> {
+  @override
+  String get recordingStage => CallRecordingService.stageCheckout;
+
   static const _baseUrl = 'https://prons.kz/ajax/offlinesvet';
   final _dio = Dio();
   final _bitrixService = BitrixService(dio: Dio());
@@ -1627,10 +1632,12 @@ class _FieldLabel extends StatelessWidget {
   const _FieldLabel({required this.label, this.hint, this.required = false});
   final String label; final String? hint; final bool required;
   @override Widget build(BuildContext context) {
-    return Row(children: [
-      if (required) const Text('* ', style: TextStyle(color: Colors.red, fontSize: 14)),
-      Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      if (hint != null) ...[const SizedBox(width: 6), Text(hint!, style: TextStyle(fontSize: 12, color: Colors.grey.shade400))],
-    ]);
+    // Длинные подписи на узком экране телефона переносятся, а не вылезают
+    // за край (RenderFlex overflowed).
+    return Text.rich(TextSpan(children: [
+      if (required) const TextSpan(text: '* ', style: TextStyle(color: Colors.red, fontSize: 14)),
+      TextSpan(text: label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      if (hint != null) TextSpan(text: '  $hint', style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+    ]));
   }
 }

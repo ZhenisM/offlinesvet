@@ -57,14 +57,25 @@ class CallRecordingService {
   int _nextSeq = 0;
   int _totalBytes = 0;
   String? _cartId;
+  int _chunkSeconds = RecordingConfig.defaultChunkSeconds;
   bool _starting = false;
+
+  // --- контекст консультации для 4sell: этап и версии полей анкеты
+  String? _stage;
+  final Map<String, int> _fieldVersions = {};
+  final Map<String, Object?> _fieldValues = {};
+  final Map<String, String?> _fieldValueLabels = {};
   bool _stopping = false;
 
   // --- поток и нарезка
   StreamSubscription<Uint8List>? _sub;
   Completer<void>? _streamDone;
   final BytesBuilder _buf = BytesBuilder(copy: false);
-  DateTime? _chunkStartedAt;
+  /// Время первого записанного сэмпла консультации. Начало каждого куска =
+  /// _audioStartAt + длительность уже нарезанного звука. Так метки идут
+  /// ровно встык (кусок N+1 начинается там, где кончился N) и не «пляшут»
+  /// от того, пачками ли микрофон отдаёт байты.
+  DateTime? _audioStartAt;
   Future<void> _writeChain = Future.value();
 
   /// ID текущей сессии — он же ORIGIN_ID лида. null, если запись не идёт.
@@ -103,6 +114,7 @@ class CallRecordingService {
       final prefs = await SharedPreferences.getInstance();
       _token = prefs.getString('auth_token') ?? '';
       final seconds = await RecordingConfig.chunkSeconds();
+      _chunkSeconds = seconds;
       _chunkBytes = seconds * RecordingConfig.bytesPerSecond;
       _sessionId = newUuidV4();
       _startedAt = DateTime.now();
@@ -110,7 +122,7 @@ class CallRecordingService {
       _totalBytes = 0;
       _cartId = cartId;
       _buf.clear();
-      _chunkStartedAt = null;
+      _audioStartAt = null;
       _lastActivityAt = DateTime.now();
 
       final stream = await _recorder.startStream(const RecordConfig(
@@ -140,28 +152,7 @@ class CallRecordingService {
       });
       await _saveActive();
 
-      final customer = await CustomerStorage.loadActive();
-      await _event('session_started', {
-        'trigger': trigger,
-        'site': 'svet',
-        'platform': Platform.operatingSystem,
-        'manager': {
-          'id': (await CustomerStorage.currentManagerId())?.toString(),
-          'name': await CustomerStorage.currentManagerName(),
-          'email': await CustomerStorage.currentManagerEmail(),
-        },
-        'audio': {
-          'format': 'wav',
-          'encoding': 'pcm_s16le',
-          'sample_rate': RecordingConfig.sampleRate,
-          'channels': RecordingConfig.numChannels,
-          'chunk_seconds': seconds,
-        },
-        if (cartId != null) 'cart_id': cartId,
-        // Клиент, выбранный на момент старта (с кнопки внизу — обычно
-        // уже есть; из анкеты — ещё нет, придёт событием lead_created).
-        if (cartId != null && customer != null) 'client': _clientJson(customer),
-      });
+      await _sendSessionStarted(trigger: trigger);
       return true;
     } catch (e) {
       debugPrint('CallRecordingService.start: $e');
@@ -171,6 +162,32 @@ class CallRecordingService {
     } finally {
       _starting = false;
     }
+  }
+
+  Future<void> _sendSessionStarted({required String trigger, String? previousSessionId}) async {
+    final customer = await CustomerStorage.loadActive();
+    await _event('session_started', {
+      'trigger': trigger,
+      'site': 'svet',
+      'platform': Platform.operatingSystem,
+      'manager': {
+        'id': (await CustomerStorage.currentManagerId())?.toString(),
+        'name': await CustomerStorage.currentManagerName(),
+        'email': await CustomerStorage.currentManagerEmail(),
+      },
+      'audio': {
+        'format': 'wav',
+        'encoding': 'pcm_s16le',
+        'sample_rate': RecordingConfig.sampleRate,
+        'channels': RecordingConfig.numChannels,
+        'chunk_seconds': _chunkSeconds,
+      },
+      if (previousSessionId != null) 'previous_session_id': previousSessionId,
+      if (_cartId != null) 'cart_id': _cartId,
+      // Клиент, выбранный на момент старта (с кнопки внизу — обычно
+      // уже есть; из анкеты — ещё нет, придёт событием lead_created).
+      if (_cartId != null && customer != null) 'client': _clientJson(customer),
+    });
   }
 
   /// Автостарт при открытии анкеты. true — запись начала анкета (тогда при
@@ -215,6 +232,7 @@ class CallRecordingService {
         'chunks': _nextSeq,
         'duration_ms': durationMs,
         if (_cartId != null) 'cart_id': _cartId,
+        if (_stage != null) 'stage': _stage,
       });
       return sessionId;
     } finally {
@@ -233,6 +251,11 @@ class CallRecordingService {
     _cartId = null;
     _nextSeq = 0;
     _totalBytes = 0;
+    _audioStartAt = null;
+    _stage = null;
+    _fieldVersions.clear();
+    _fieldValues.clear();
+    _fieldValueLabels.clear();
     isRecording.value = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_activeKey);
@@ -244,10 +267,10 @@ class CallRecordingService {
 
   void _onPcm(Uint8List data) {
     if (data.isEmpty || _sessionId == null) return;
-    if (_buf.isEmpty) {
-      // Начало куска = сейчас минус длительность только что пришедших байт.
+    if (_audioStartAt == null) {
+      // Первый звук консультации: сейчас минус длительность пришедших байт.
       final ms = data.length * 1000 ~/ RecordingConfig.bytesPerSecond;
-      _chunkStartedAt = DateTime.now().subtract(Duration(milliseconds: ms));
+      _audioStartAt = DateTime.now().subtract(Duration(milliseconds: ms));
     }
     _buf.add(data);
     while (_buf.length >= _chunkBytes) {
@@ -255,8 +278,6 @@ class CallRecordingService {
       _emitChunk(Uint8List.sublistView(all, 0, _chunkBytes));
       if (all.length > _chunkBytes) {
         final rest = Uint8List.fromList(Uint8List.sublistView(all, _chunkBytes));
-        final restMs = rest.length * 1000 ~/ RecordingConfig.bytesPerSecond;
-        _chunkStartedAt = DateTime.now().subtract(Duration(milliseconds: restMs));
         _buf.add(rest);
       }
     }
@@ -266,11 +287,15 @@ class CallRecordingService {
     final sessionId = _sessionId;
     if (sessionId == null || pcm.isEmpty) return;
     final seq = _nextSeq++;
-    final startedAt = _chunkStartedAt ?? DateTime.now();
-    _chunkStartedAt = null;
+    final base = _audioStartAt ?? DateTime.now();
+    final startedAt = base.add(Duration(
+        milliseconds: _totalBytes * 1000 ~/ RecordingConfig.bytesPerSecond));
     _totalBytes += pcm.length;
     final durationMs = pcm.length * 1000 ~/ RecordingConfig.bytesPerSecond;
     final token = _token;
+    final cartId = _cartId;
+    final stage = _stage;
+    final fragmentId = newUuidV4();
     final bytes = Uint8List.fromList(pcm); // своя копия — буфер переиспользуется
 
     // Запись файлов строго по очереди, чтобы seq уходили по порядку.
@@ -291,6 +316,9 @@ class CallRecordingService {
           seq: seq,
           durationMs: durationMs,
           filePath: path,
+          fragmentId: fragmentId,
+          cartId: cartId,
+          stage: stage,
         ));
         await _saveActive();
       } catch (e) {
@@ -380,19 +408,169 @@ class CallRecordingService {
   }
 
   /// Вызывать после смены активной корзины (и после setActive клиента).
-  /// Первая корзина за сессию — привязка (basket_active). Смена корзины
-  /// посреди записи запись НЕ останавливает (менеджер останавливает сам),
-  /// но фиксируется событием basket_changed.
+  ///
+  /// - Первая корзина за сессию — привязка (basket_active).
+  /// - Другая корзина посреди записи — другой покупатель: по требованию
+  ///   4sell один кусок не должен смешивать двух покупателей. Текущий кусок
+  ///   обрезается и уходит в прежнюю консультацию, она закрывается
+  ///   (reason=cart_switched), и тут же, без паузы в записи, начинается
+  ///   новая консультация для новой корзины.
   Future<void> onActiveCartChanged(String newCartId) async {
-    if (!isRecording.value || newCartId == _cartId) return;
-    final prev = _cartId;
+    if (!isRecording.value || newCartId == _cartId || _stopping) return;
+    if (_cartId == null) {
+      _cartId = newCartId;
+      await _saveActive();
+      final customer = await CustomerStorage.loadActive();
+      await _event('basket_active', {
+        'cart_id': newCartId,
+        if (customer != null) 'client': _clientJson(customer),
+      });
+      return;
+    }
+    await _rotateSession(newCartId);
+  }
+
+  Future<void> _rotateSession(String newCartId) async {
+    final oldId = _sessionId;
+    if (oldId == null) return;
+    final oldCart = _cartId;
+    final oldStage = _stage;
+
+    // Синхронно (без await) — чтобы ни один байт из микрофона не попал
+    // между обрезкой куска и сменой ID: дальше _onPcm пишет в новую сессию.
+    final tail = _buf.takeBytes();
+    if (tail.isNotEmpty) {
+      _emitChunk(tail.length.isOdd ? tail.sublist(0, tail.length - 1) : tail);
+    }
+    final lastSeq = _nextSeq - 1;
+    final chunks = _nextSeq;
+    final durationMs = _totalBytes * 1000 ~/ RecordingConfig.bytesPerSecond;
+    // Новая консультация продолжает ту же звуковую дорожку без паузы.
+    if (_audioStartAt != null) {
+      _audioStartAt = _audioStartAt!.add(Duration(milliseconds: durationMs));
+    }
+
+    _sessionId = newUuidV4();
+    _startedAt = DateTime.now();
+    _nextSeq = 0;
+    _totalBytes = 0;
     _cartId = newCartId;
+    // Экран при смене корзины не меняется — этап переносим в новую
+    // консультацию, чтобы её первые куски не уходили без этапа.
+    _stage = oldStage;
+    _fieldVersions.clear();
+    _fieldValues.clear();
+    _fieldValueLabels.clear();
+    elapsed.value = Duration.zero;
+
+    await _event('session_ended', {
+      'reason': 'cart_switched',
+      'last_seq': lastSeq,
+      'chunks': chunks,
+      'duration_ms': durationMs,
+      if (oldCart != null) 'cart_id': oldCart,
+      if (oldStage != null) 'stage': oldStage,
+      'next_session_id': _sessionId,
+    }, sessionId: oldId);
     await _saveActive();
-    final customer = await CustomerStorage.loadActive();
-    await _event(prev == null ? 'basket_active' : 'basket_changed', {
-      'cart_id': newCartId,
-      if (prev != null) 'previous_cart_id': prev,
-      if (customer != null) 'client': _clientJson(customer),
+    await _sendSessionStarted(trigger: 'cart_switch', previousSessionId: oldId);
+    if (oldStage != null) {
+      await _event('stage_changed', {'stage': oldStage, 'reason': 'cart_switch'});
+    }
+  }
+
+  // ===================================================================
+  // Этап консультации и действия менеджера (контекст для 4sell)
+  // ===================================================================
+
+  static const stageClientData = 'client_data'; // 1. Данные клиента
+  static const stageNeeds = 'needs';            // 2. Выявление потребности
+  static const stageCatalog = 'catalog';        // 3. Работа с каталогом
+  static const stageCart = 'cart';              // 4. Корзина
+  static const stageCheckout = 'checkout';      // оформление заказа
+
+  String? get currentStage => isRecording.value ? _stage : null;
+
+  /// Этап консультации изменён (событие stage_changed).
+  Future<void> setStage(String stage, {String? reason}) async {
+    if (!isRecording.value) return;
+    // Запись начата кнопкой без корзины, а менеджер уже работает с корзиной
+    // (открыл её или оформление) — привязываем текущую. Тогда последующая
+    // смена корзины корректно разделит консультацию, а не просто привяжет.
+    if (_cartId == null && (stage == stageCart || stage == stageCheckout)) {
+      final active = await CustomerStorage.getActiveCartId();
+      if (active != null && active.isNotEmpty) await onActiveCartChanged(active);
+    }
+    if (_stage == stage) return;
+    final prev = _stage;
+    _stage = stage;
+    await _event('stage_changed', {
+      'stage': stage,
+      if (prev != null) 'previous_stage': prev,
+      if (reason != null) 'reason': reason,
+    });
+  }
+
+  /// Открыт раздел каталога — по нему 4sell решает, каких полей не хватает
+  /// для подбора (подсказки 3.1–3.5).
+  Future<void> onCatalogSectionOpened({required String sectionId, required String sectionName}) async {
+    if (!isRecording.value) return;
+    await setStage(stageCatalog, reason: 'section_opened');
+    await _event('catalog_section_opened', {
+      'section_id': sectionId,
+      'section_name': sectionName,
+      if (_cartId != null) 'cart_id': _cartId,
+    });
+  }
+
+  /// Товар добавлен в корзину.
+  Future<void> onProductAdded({
+    required String cartId,
+    required String productId,
+    required String productName,
+    required int quantity,
+  }) async {
+    if (!isRecording.value) return;
+    if (_cartId == null) await onActiveCartChanged(cartId);
+    await _event('product_added', {
+      'cart_id': cartId,
+      'product_id': productId,
+      'product_name': productName,
+      'quantity': quantity,
+    });
+  }
+
+  /// Поле анкеты изменено. [source]: manager (ввёл/исправил вручную) |
+  /// manager_confirmed (подтвердил предложенное) | auto (автозаполнение).
+  /// Версия поля растёт на каждое изменение в пределах консультации —
+  /// по ней 4sell понимает, что значение уже правил менеджер.
+  Future<void> onFieldChanged({
+    required String field,
+    required Object? value,
+    String? label,
+    String? valueLabel,
+    String source = 'manager',
+  }) async {
+    if (!isRecording.value) return;
+    final prev = _fieldValues[field];
+    final prevLabel = _fieldValueLabels[field];
+    final version = (_fieldVersions[field] ?? 0) + 1;
+    _fieldVersions[field] = version;
+    _fieldValues[field] = value;
+    _fieldValueLabels[field] = valueLabel;
+    await _event('field_changed', {
+      'field': field,
+      if (label != null) 'label': label,
+      'value': value,
+      if (valueLabel != null) 'value_label': valueLabel,
+      'previous_value': prev,
+      if (prevLabel != null) 'previous_value_label': prevLabel,
+      'source': source,
+      'version': version,
+      'author': {
+        'id': (await CustomerStorage.currentManagerId())?.toString(),
+        'name': await CustomerStorage.currentManagerName(),
+      },
     });
   }
 
