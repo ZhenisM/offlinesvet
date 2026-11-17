@@ -192,8 +192,21 @@ class CallRecordingService {
 
   /// Автостарт при открытии анкеты. true — запись начала анкета (тогда при
   /// закрытии без отправки анкета сама её остановит).
-  Future<bool> startForLeadForm({bool badLead = false}) =>
-      start(trigger: badLead ? 'bad_lead_form' : 'lead_form');
+  ///
+  /// Анкета — это всегда НОВЫЙ покупатель. Если запись уже идёт и привязана
+  /// к корзине прежнего клиента, консультация с ней закрывается
+  /// (reason=new_client) и сразу, без паузы в звуке, начинается новая — без
+  /// корзины. Тогда анкета, лид и новая корзина попадают в одну консультацию.
+  Future<bool> startForLeadForm({bool badLead = false}) async {
+    final trigger = badLead ? 'bad_lead_form' : 'lead_form';
+    if (isRecording.value) {
+      if (_cartId != null && !_stopping) {
+        await _rotateSession(null, trigger: trigger, endReason: 'new_client');
+      }
+      return false;
+    }
+    return start(trigger: trigger);
+  }
 
   /// Останавливает запись: дописывает хвост последним куском и отправляет
   /// session_ended. Возвращает ID завершённой сессии.
@@ -430,7 +443,11 @@ class CallRecordingService {
     await _rotateSession(newCartId);
   }
 
-  Future<void> _rotateSession(String newCartId) async {
+  Future<void> _rotateSession(
+    String? newCartId, {
+    String trigger = 'cart_switch',
+    String endReason = 'cart_switched',
+  }) async {
     final oldId = _sessionId;
     if (oldId == null) return;
     final oldCart = _cartId;
@@ -455,16 +472,18 @@ class CallRecordingService {
     _nextSeq = 0;
     _totalBytes = 0;
     _cartId = newCartId;
-    // Экран при смене корзины не меняется — этап переносим в новую
-    // консультацию, чтобы её первые куски не уходили без этапа.
-    _stage = oldStage;
+    // Смена корзины — экран тот же, этап переносим в новую консультацию,
+    // чтобы её первые куски не уходили без этапа. Новый клиент (анкета) —
+    // этап задаст сама анкета.
+    final carriedStage = newCartId != null ? oldStage : null;
+    _stage = carriedStage;
     _fieldVersions.clear();
     _fieldValues.clear();
     _fieldValueLabels.clear();
     elapsed.value = Duration.zero;
 
     await _event('session_ended', {
-      'reason': 'cart_switched',
+      'reason': endReason,
       'last_seq': lastSeq,
       'chunks': chunks,
       'duration_ms': durationMs,
@@ -473,9 +492,9 @@ class CallRecordingService {
       'next_session_id': _sessionId,
     }, sessionId: oldId);
     await _saveActive();
-    await _sendSessionStarted(trigger: 'cart_switch', previousSessionId: oldId);
-    if (oldStage != null) {
-      await _event('stage_changed', {'stage': oldStage, 'reason': 'cart_switch'});
+    await _sendSessionStarted(trigger: trigger, previousSessionId: oldId);
+    if (carriedStage != null) {
+      await _event('stage_changed', {'stage': carriedStage, 'reason': 'cart_switch'});
     }
   }
 
